@@ -1,0 +1,30 @@
+{
+  "$schema": "https://nitro.margelo.com/nitro.schema.json",
+  "cxxNamespace": [
+    "nitroshaders"
+  ],
+  "ios": {
+    "iosModuleName": "NitroShaders"
+  },
+  "android": {
+    "androidNamespace": [
+      "nitroshaders"
+    ],
+    "androidCxxLibName": "NitroShaders"
+  },
+  "autolinking": {
+    "NitroShaders": {
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "HybridNitroShaders"
+      },
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridNitroShaders"
+      }
+    }
+  },
+  "ignorePaths": [
+    "**/node_modules"
+  ]
+}

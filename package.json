@@ -1,0 +1,17 @@
+{
+  "name": "react-native-nitro-shaders-monorepo",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/bun": "latest",
+    "turbo": "^2.10.2"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
