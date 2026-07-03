@@ -1,12 +1,12 @@
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View } from 'react-native';
-import { LiquidMetal } from 'react-native-nitro-shaders';
+import { MaterialOrb } from 'react-native-nitro-shaders';
 
 export default function App() {
   return (
     <View style={styles.container}>
-      <LiquidMetal shape="circle" style={styles.surface} />
-      <Text style={styles.label}>LiquidMetal Paper</Text>
+      <MaterialOrb material="liquidChrome" style={styles.surface} />
+      <Text style={styles.label}>MaterialOrb liquidChrome</Text>
       <StatusBar style="auto" />
     </View>
   );

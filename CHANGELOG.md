@@ -39,3 +39,12 @@ Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a f
 - F3-D1b (Developer): correttivo approvato. Rimossi `variant`, `LiquidMetalVariant` e `LIQUID_METAL_VARIANTS`; example riportato a demo singola `LiquidMetal` Paper con `shape="circle"`.
 - F3-D2 (Developer): loop LiquidMetal `shape="circle"` reso piu' pulito introducendo `loopTravel = 3.0`, `phase`, `loopT`, crossfade del noise non periodico e `direction -= loopT` nei tre sorgenti AGSL/Metal/Swift inline. Daisy/metaballs lasciati fuori scope perche' hanno motion locale non periodico.
 - Verifica F3-D2: `bun run typecheck` nel package verde. Serve ancora validazione visiva Android post-fix.
+- Giulio ha validato LiquidMetal Paper su Android dopo il fix loop.
+- Aggiunte reference piu' accurate in `docs/refs/materials/`; creata analisi `docs/process/MATERIALS_ANALYSIS.md`. Decisione: nuova famiglia separata `MaterialOrb`, non variant di `LiquidMetal`.
+
+## [2026-07-03] - Fase 4 - MaterialOrb liquidChrome Android
+- F4-D1: creato componente pubblico `MaterialOrb` separato da `LiquidMetal`, con `material="liquidChrome"` e props `speed`, `wobble`, `distortion`, `detail`, `materialColor`; demo example aggiornata.
+- Android: aggiunto shader `material-orb.agsl`, selezione `shader == "materialOrb"` e uniform plumbing Kotlin; aggiornati generated minimi Nitro (`NitroShadersConfig.json`, generated Kotlin spec) per le nuove props.
+- Validazione: `bun run typecheck` verde e `:app:assembleDebug` verde.
+- Runtime Android: primo crash AGSL per helper `saturate` duplicato risolto rinominandolo `orbSaturate`; app avviata su emulatore e screenshot acquisiti.
+- Rifinitura visuale: F4-D1b ha rimosso noise maculato; F4-D1c ha reintrodotto marbling chrome largo e morbido. Stato attuale: base visibile e stabile, ancora da iterare verso reference per piu' liquid blob e highlights organici.

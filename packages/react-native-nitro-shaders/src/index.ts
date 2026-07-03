@@ -8,4 +8,6 @@ export type NitroShadersRef = HybridRef<NitroShadersProps, NitroShadersMethods>
 export { NitroShaders, ShaderSurface, type ShaderSurfaceProps } from './core/ShaderSurface'
 export { FluidGradient, type FluidGradientProps } from './effects/FluidGradient'
 export { LiquidMetal, type LiquidMetalProps } from './effects/LiquidMetal'
+export { MaterialOrb, type MaterialOrbProps } from './effects/MaterialOrb'
 export type { LiquidMetalShape } from './materials/liquid-metal'
+export type { MaterialOrbMaterial } from './materials/material-orb'

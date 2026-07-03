@@ -1,0 +1,140 @@
+uniform float2 u_resolution;
+uniform float u_time;
+uniform float u_speed;
+uniform float u_orbMaterial;
+uniform float u_wobble;
+uniform float u_distortion;
+uniform float u_detail;
+uniform float u_materialColor;
+
+float orbSaturate(float v) {
+    return clamp(v, 0.0, 1.0);
+}
+
+float hash21(float2 p) {
+    p = fract(p * float2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+
+float noise(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float2 u = f * f * (3.0 - 2.0 * f);
+
+    float a = hash21(i);
+    float b = hash21(i + float2(1.0, 0.0));
+    float c = hash21(i + float2(0.0, 1.0));
+    float d = hash21(i + float2(1.0, 1.0));
+
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(float2 p) {
+    float value = 0.0;
+    float amp = 0.5;
+    for (int i = 0; i < 4; i++) {
+        value += amp * noise(p);
+        p = p * 1.86 + float2(17.2, 8.7);
+        amp *= 0.42;
+    }
+    return value;
+}
+
+float heightField(float2 p, float t) {
+    float detail = mix(0.78, 1.42, orbSaturate(u_detail));
+    float drift = t * 0.13;
+    float2 flow = float2(drift, -drift * 0.58);
+    float2 warp = float2(
+        fbm(p * 0.86 + flow + float2(1.7, 3.1)) - 0.5,
+        fbm(p * 0.92 - flow * 0.9 + float2(5.4, 2.1)) - 0.5
+    );
+    float2 q = p + warp * 0.72;
+    float broad = fbm(q * detail + flow * 0.55);
+    float fold = sin(q.x * 2.15 + q.y * 0.95 + broad * 3.9 + drift * 0.7);
+    fold += sin(q.y * 2.55 - q.x * 1.35 - broad * 2.8 - drift * 0.55) * 0.82;
+    fold += sin((q.x + q.y) * 1.58 + warp.x * 4.4 - warp.y * 2.7 + drift * 0.38) * 0.66;
+    float ribbon = fbm((q + float2(fold * 0.11, broad * -0.22)) * (detail * 1.68) - flow * 0.4);
+    return ((broad - 0.5) * 0.76 + (ribbon - 0.5) * 0.38 + fold * 0.18) * (0.9 + u_distortion * 1.35);
+}
+
+half4 main(float2 fragCoord) {
+    float2 resolution = max(u_resolution, float2(1.0));
+    float size = min(resolution.x, resolution.y);
+    float2 uv = (fragCoord - 0.5 * resolution) / size;
+    float t = u_time * u_speed;
+
+    float angle = atan(uv.y, uv.x);
+    float radius = length(uv);
+    float2 edgeDir = float2(cos(angle), sin(angle));
+    float edgeNoise = fbm(edgeDir * 1.05 + float2(t * 0.08, -t * 0.05));
+    float edgeNoiseB = fbm(edgeDir * 2.08 + float2(-t * 0.07, t * 0.06) + float2(4.1, 1.6));
+    float lobe = sin(angle * 2.0 + t * 0.33) * 0.55;
+    lobe += sin(angle * 3.0 - t * 0.27) * 0.34;
+    lobe += sin(angle * 5.0 + edgeNoise * 2.3 + t * 0.19) * 0.14;
+    float wobble = 0.42 + u_wobble * 0.9;
+    float orbRadius = 0.372 + ((edgeNoise - 0.5) * 0.05 + (edgeNoiseB - 0.5) * 0.025 + lobe * 0.022) * wobble;
+    float sdf = radius - orbRadius;
+    float alpha = 1.0 - smoothstep(-0.014, 0.018, sdf);
+
+    if (alpha <= 0.001) {
+        return half4(0.0);
+    }
+
+    float2 p = uv / max(orbRadius, 0.001);
+    float z2 = orbSaturate(1.0 - dot(p, p));
+    float z = sqrt(z2);
+
+    float eps = 0.012;
+    float h = heightField(p, t);
+    float hx = heightField(p + float2(eps, 0.0), t) - h;
+    float hy = heightField(p + float2(0.0, eps), t) - h;
+    float2 dent = float2(hx, hy) / eps;
+    float3 normal = normalize(float3(p.x * 0.28 - dent.x * 0.34, p.y * 0.28 - dent.y * 0.34, z * 0.78 + 0.18));
+
+    float fresnel = pow(1.0 - orbSaturate(normal.z), 1.65);
+    float vertical = normal.y * 0.5 + 0.5;
+    float lateral = normal.x * 0.5 + 0.5;
+    float2 matcap = normal.xy + float2(h * 0.28, -h * 0.18);
+    float2 envWarp = float2(
+        fbm(matcap * 1.25 + float2(t * 0.05, 2.4)) - 0.5,
+        fbm(matcap * 1.18 + float2(5.8, -t * 0.06)) - 0.5
+    );
+    float2 env = matcap + envWarp * 0.56 + p * 0.12;
+    float foldA = sin(env.x * 3.4 + env.y * 1.45 + h * 4.8 + t * 0.18);
+    float foldB = sin(env.y * 4.2 - env.x * 2.25 - h * 3.7 - t * 0.14);
+    float foldC = sin((env.x + env.y) * 2.7 + envWarp.x * 5.2 - envWarp.y * 3.0);
+    float liquid = (foldA * 0.43 + foldB * 0.34 + foldC * 0.23) * 0.5 + 0.5;
+    float pools = fbm(env * 2.1 + float2(h * 0.8, -h * 0.62));
+    float chrome = orbSaturate(liquid * 0.68 + pools * 0.32);
+    float whiteBand = smoothstep(0.53, 0.67, vertical + h * 0.18 - abs(env.x + 0.12) * 0.12);
+    float whitePatch = smoothstep(0.57, 0.85, chrome) * smoothstep(-0.42, 0.32, normal.y);
+    float darkPatch = smoothstep(0.39, 0.18, chrome + h * 0.12) * (0.62 + 0.38 * smoothstep(-0.1, 0.65, normal.y));
+    float innerDark = smoothstep(0.18, 0.04, abs(liquid - 0.46)) * (1.0 - fresnel * 0.55);
+
+    float warm = orbSaturate(u_materialColor);
+    float3 black = mix(float3(0.025, 0.028, 0.036), float3(0.05, 0.039, 0.03), warm);
+    float3 dark = mix(float3(0.115, 0.125, 0.145), float3(0.15, 0.125, 0.1), warm);
+    float3 mid = mix(float3(0.56, 0.6, 0.65), float3(0.66, 0.6, 0.52), warm);
+    float3 light = mix(float3(0.94, 0.97, 1.0), float3(1.0, 0.95, 0.86), warm);
+
+    float3 color = mix(dark, mid, smoothstep(0.28, 0.72, chrome));
+    color = mix(color, black, orbSaturate(darkPatch * 0.82 + innerDark * 0.55));
+    color = mix(color, light, orbSaturate(whitePatch * 0.76 + whiteBand * 0.52));
+    float broadTop = smoothstep(0.34, 0.76, normal.y + h * 0.2) * smoothstep(0.78, 0.18, abs(normal.x + h * 0.28));
+    color = mix(color, light, broadTop * 0.42);
+    float rimTint = fresnel * (0.28 + 0.18 * pools);
+    float3 violet = float3(0.36, 0.26, 0.58);
+    float3 green = float3(0.24, 0.56, 0.42);
+    color += mix(violet, green, smoothstep(-0.48, 0.54, normal.x + h)) * rimTint;
+    float creaseTint = smoothstep(0.62, 0.9, abs(foldA * foldB)) * (1.0 - z) * 0.18;
+    color += mix(green, violet, lateral) * creaseTint;
+    float tightSpec = pow(orbSaturate(dot(normal, normalize(float3(-0.24, 0.58, 0.78)))), 9.0);
+    float sideSpec = pow(orbSaturate(dot(normal, normalize(float3(0.62, -0.18, 0.76)))), 7.0);
+    color += light * tightSpec * 0.42;
+    color += float3(0.8, 0.88, 1.0) * sideSpec * 0.18;
+    color *= 0.82 + z * 0.24;
+
+    float feather = smoothstep(0.02, -0.02, sdf);
+    return half4(half3(color), half(alpha * feather));
+}

@@ -189,6 +189,38 @@ class HybridNitroShaders(val context: ThemedReactContext): HybridNitroShadersSpe
             _angle = value
             shaderSurfaceView.angle = value
         }
+
+    private var _orbMaterial = 0.0
+    override var orbMaterial: Double
+        get() = _orbMaterial
+        set(value) {
+            _orbMaterial = value
+            shaderSurfaceView.orbMaterial = value
+        }
+
+    private var _wobble = 1.0
+    override var wobble: Double
+        get() = _wobble
+        set(value) {
+            _wobble = value
+            shaderSurfaceView.wobble = value
+        }
+
+    private var _detail = 1.0
+    override var detail: Double
+        get() = _detail
+        set(value) {
+            _detail = value
+            shaderSurfaceView.detail = value
+        }
+
+    private var _materialColor = 0.5
+    override var materialColor: Double
+        get() = _materialColor
+        set(value) {
+            _materialColor = value
+            shaderSurfaceView.materialColor = value
+        }
 }
 
 private class ShaderSurfaceView(context: Context): View(context), Choreographer.FrameCallback {
@@ -321,6 +353,30 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
             invalidate()
         }
 
+    var orbMaterial: Double = 0.0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var wobble: Double = 1.0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var detail: Double = 1.0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var materialColor: Double = 0.5
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fluidPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -339,6 +395,23 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
     private val liquidMetalPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var liquidMetalShaderInit = false
     private var liquidMetalRuntimeShader: RuntimeShader? = null
+
+    private val materialOrbPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var materialOrbShaderInit = false
+    private var materialOrbRuntimeShader: RuntimeShader? = null
+
+    private fun materialOrbShader(): RuntimeShader? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return null
+        }
+        if (!materialOrbShaderInit) {
+            materialOrbShaderInit = true
+            val source = appContext.assets.open("shaders/material-orb.agsl")
+                .bufferedReader().use { it.readText() }
+            materialOrbRuntimeShader = RuntimeShader(source).also { materialOrbPaint.shader = it }
+        }
+        return materialOrbRuntimeShader
+    }
 
     private fun liquidMetalShader(): RuntimeShader? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
@@ -395,7 +468,14 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
         val h = height.toFloat()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (shader == "liquidMetal") {
+            if (shader == "materialOrb") {
+                val materialOrb = materialOrbShader()
+                if (materialOrb != null) {
+                    setMaterialOrbUniforms(materialOrb, w, h)
+                    canvas.drawRect(0f, 0f, w, h, materialOrbPaint)
+                    return
+                }
+            } else if (shader == "liquidMetal") {
                 val liquidMetal = liquidMetalShader()
                 if (liquidMetal != null) {
                     setLiquidMetalUniforms(liquidMetal, w, h)
@@ -426,6 +506,12 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
             }
         }
 
+        if (shader == "materialOrb") {
+            fallbackPaint.color = Color.TRANSPARENT
+            canvas.drawRect(0f, 0f, w, h, fallbackPaint)
+            return
+        }
+
         if (shader == "liquidMetal") {
             // API < 33 fallback: flat fill with the background color.
             fallbackPaint.color = parseColor(colorBack)
@@ -443,6 +529,17 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
 
         fallbackPaint.color = parsedColor
         canvas.drawRect(0f, 0f, w, h, fallbackPaint)
+    }
+
+    private fun setMaterialOrbUniforms(materialOrb: RuntimeShader, w: Float, h: Float) {
+        materialOrb.setFloatUniform("u_time", currentTimeSeconds())
+        materialOrb.setFloatUniform("u_speed", speed.toFloat())
+        materialOrb.setFloatUniform("u_resolution", w, h)
+        materialOrb.setFloatUniform("u_orbMaterial", orbMaterial.toFloat())
+        materialOrb.setFloatUniform("u_wobble", wobble.toFloat())
+        materialOrb.setFloatUniform("u_distortion", distortion.toFloat())
+        materialOrb.setFloatUniform("u_detail", detail.toFloat())
+        materialOrb.setFloatUniform("u_materialColor", materialColor.toFloat())
     }
 
     private fun setLiquidMetalUniforms(liquidMetal: RuntimeShader, w: Float, h: Float) {

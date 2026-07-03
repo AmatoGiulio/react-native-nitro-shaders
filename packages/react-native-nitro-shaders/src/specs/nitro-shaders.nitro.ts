@@ -27,6 +27,10 @@ export interface NitroShadersProps extends HybridViewProps {
   distortion: number
   contour: number
   angle: number
+  orbMaterial: number
+  wobble: number
+  detail: number
+  materialColor: number
 }
 
 export interface NitroShadersMethods extends HybridViewMethods {}
