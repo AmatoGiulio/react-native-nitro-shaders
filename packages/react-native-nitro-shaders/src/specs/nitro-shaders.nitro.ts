@@ -5,7 +5,10 @@ import type {
 } from 'react-native-nitro-modules'
 
 export interface NitroShadersProps extends HybridViewProps {
-   isRed: boolean
+  color: string
+  animated: boolean
+  paused: boolean
+  debugTime: number
 }
 
 export interface NitroShadersMethods extends HybridViewMethods {}

@@ -1,10 +1,17 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { ShaderSurface } from 'react-native-nitro-shaders';
 
 export default function App() {
   return (
     <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
+      <ShaderSurface
+        color="#4f7cff"
+        animated={false}
+        paused={false}
+        debugTime={0}
+        style={styles.surface}
+      />
       <StatusBar style="auto" />
     </View>
   );
@@ -16,5 +23,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  surface: {
+    width: 220,
+    height: 220,
   },
 });
