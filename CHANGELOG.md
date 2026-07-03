@@ -30,3 +30,12 @@ Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a f
 - Validato da Giulio su emulatore API 34: gradiente organico animato 220×220.
 - Aggiunta reference visiva `docs/refs/smoke-shaders.png` (swoosh black chrome liquido) → input per Fase 3 LiquidChrome.
 - Il core Fase 1 non ha richiesto modifiche strutturali per ospitare il primo material (validazione dell'architettura).
+## [2026-07-03] - Fase 3 - LiquidMetal reference + API demo
+- Acquisita reference Paper Design `liquid-metal` in `docs/refs/` con attribution Apache 2.0; decisione: usarla come riferimento/derivata dichiarata, non come apertura a image mask/logo upload nell'MVP.
+- Worktree corrente contiene porting LiquidMetal in corso: `liquid-metal.agsl`, `liquid-metal.metal`, plumbing Kotlin/Swift, spec Nitro esteso e wrapper pubblico `LiquidMetal`.
+- F3-D1 prima interpretazione: API TS `LiquidMetal` estesa con `variant?: 'silver' | 'aqua' | 'pearl'`; rigettata da Giulio perche' le tre ball della reference sono materiali diversi, non variant del LiquidMetal Paper.
+- Decisione corretta: LiquidMetal Paper resta com'e'; le ball diventano una famiglia separata di material/orb da analizzare e implementare dopo, con nomi/API propri.
+- Verifica: `bun run typecheck` alla root non esiste (`Script not found "typecheck"`); verifica corretta eseguita nel package `packages/react-native-nitro-shaders` con `bun run typecheck` verde (`tsc --noEmit`).
+- F3-D1b (Developer): correttivo approvato. Rimossi `variant`, `LiquidMetalVariant` e `LIQUID_METAL_VARIANTS`; example riportato a demo singola `LiquidMetal` Paper con `shape="circle"`.
+- F3-D2 (Developer): loop LiquidMetal `shape="circle"` reso piu' pulito introducendo `loopTravel = 3.0`, `phase`, `loopT`, crossfade del noise non periodico e `direction -= loopT` nei tre sorgenti AGSL/Metal/Swift inline. Daisy/metaballs lasciati fuori scope perche' hanno motion locale non periodico.
+- Verifica F3-D2: `bun run typecheck` nel package verde. Serve ancora validazione visiva Android post-fix.

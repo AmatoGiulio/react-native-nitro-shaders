@@ -110,22 +110,6 @@ class HybridNitroShaders(val context: ThemedReactContext): HybridNitroShadersSpe
             shaderSurfaceView.grain = value
         }
 
-    private var _variant = "silver"
-    override var variant: String
-        get() = _variant
-        set(value) {
-            _variant = value
-            shaderSurfaceView.variant = value
-        }
-
-    private var _flow = 0.35
-    override var flow: Double
-        get() = _flow
-        set(value) {
-            _flow = value
-            shaderSurfaceView.flow = value
-        }
-
     private var _distortion = 1.2
     override var distortion: Double
         get() = _distortion
@@ -134,28 +118,76 @@ class HybridNitroShaders(val context: ThemedReactContext): HybridNitroShadersSpe
             shaderSurfaceView.distortion = value
         }
 
-    private var _contrast = 1.4
-    override var contrast: Double
-        get() = _contrast
+    private var _shape = "circle"
+    override var shape: String
+        get() = _shape
         set(value) {
-            _contrast = value
-            shaderSurfaceView.contrast = value
+            _shape = value
+            shaderSurfaceView.shape = value
         }
 
-    private var _highlightWidth = 0.65
-    override var highlightWidth: Double
-        get() = _highlightWidth
+    private var _colorBack = "#00000000"
+    override var colorBack: String
+        get() = _colorBack
         set(value) {
-            _highlightWidth = value
-            shaderSurfaceView.highlightWidth = value
+            _colorBack = value
+            shaderSurfaceView.colorBack = value
         }
 
-    private var _highlightIntensity = 1.1
-    override var highlightIntensity: Double
-        get() = _highlightIntensity
+    private var _colorTint = "#00000000"
+    override var colorTint: String
+        get() = _colorTint
         set(value) {
-            _highlightIntensity = value
-            shaderSurfaceView.highlightIntensity = value
+            _colorTint = value
+            shaderSurfaceView.colorTint = value
+        }
+
+    private var _repetition = 4.0
+    override var repetition: Double
+        get() = _repetition
+        set(value) {
+            _repetition = value
+            shaderSurfaceView.repetition = value
+        }
+
+    private var _softness = 0.5
+    override var softness: Double
+        get() = _softness
+        set(value) {
+            _softness = value
+            shaderSurfaceView.softness = value
+        }
+
+    private var _shiftRed = 0.3
+    override var shiftRed: Double
+        get() = _shiftRed
+        set(value) {
+            _shiftRed = value
+            shaderSurfaceView.shiftRed = value
+        }
+
+    private var _shiftBlue = 0.3
+    override var shiftBlue: Double
+        get() = _shiftBlue
+        set(value) {
+            _shiftBlue = value
+            shaderSurfaceView.shiftBlue = value
+        }
+
+    private var _contour = 0.5
+    override var contour: Double
+        get() = _contour
+        set(value) {
+            _contour = value
+            shaderSurfaceView.contour = value
+        }
+
+    private var _angle = 0.0
+    override var angle: Double
+        get() = _angle
+        set(value) {
+            _angle = value
+            shaderSurfaceView.angle = value
         }
 }
 
@@ -229,37 +261,61 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
             invalidate()
         }
 
-    var variant: String = "silver"
-        set(value) {
-            field = value
-            invalidate()
-        }
-
-    var flow: Double = 0.35
-        set(value) {
-            field = value
-            invalidate()
-        }
-
     var distortion: Double = 1.2
         set(value) {
             field = value
             invalidate()
         }
 
-    var contrast: Double = 1.4
+    var shape: String = "circle"
         set(value) {
             field = value
             invalidate()
         }
 
-    var highlightWidth: Double = 0.65
+    var colorBack: String = "#00000000"
         set(value) {
             field = value
             invalidate()
         }
 
-    var highlightIntensity: Double = 1.1
+    var colorTint: String = "#00000000"
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var repetition: Double = 4.0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var softness: Double = 0.5
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var shiftRed: Double = 0.3
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var shiftBlue: Double = 0.3
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var contour: Double = 0.5
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var angle: Double = 0.0
         set(value) {
             field = value
             invalidate()
@@ -280,22 +336,21 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
     private var solidShaderInit = false
     private var solidRuntimeShader: RuntimeShader? = null
 
-    private val chromePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var chromeShaderInit = false
-    private var chromeRuntimeShader: RuntimeShader? = null
+    private val liquidMetalPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var liquidMetalShaderInit = false
+    private var liquidMetalRuntimeShader: RuntimeShader? = null
 
-
-    private fun chromeShader(): RuntimeShader? {
+    private fun liquidMetalShader(): RuntimeShader? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             return null
         }
-        if (!chromeShaderInit) {
-            chromeShaderInit = true
-            val source = appContext.assets.open("shaders/liquid-chrome.agsl")
+        if (!liquidMetalShaderInit) {
+            liquidMetalShaderInit = true
+            val source = appContext.assets.open("shaders/liquid-metal.agsl")
                 .bufferedReader().use { it.readText() }
-            chromeRuntimeShader = RuntimeShader(source).also { chromePaint.shader = it }
+            liquidMetalRuntimeShader = RuntimeShader(source).also { liquidMetalPaint.shader = it }
         }
-        return chromeRuntimeShader
+        return liquidMetalRuntimeShader
     }
 
     private fun fluidShader(): RuntimeShader? {
@@ -340,13 +395,13 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
         val h = height.toFloat()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (shader == "liquidChrome") {
-                val chrome = chromeShader()
-                if (chrome != null) {
-                    setChromeUniforms(chrome, w, h)
+            if (shader == "liquidMetal") {
+                val liquidMetal = liquidMetalShader()
+                if (liquidMetal != null) {
+                    setLiquidMetalUniforms(liquidMetal, w, h)
                     // drawPaint fills the whole device clip when the parent disables
                     // child clipping (RN default) — draw an explicit rect instead.
-                    canvas.drawRect(0f, 0f, w, h, chromePaint)
+                    canvas.drawRect(0f, 0f, w, h, liquidMetalPaint)
                     return
                 }
             } else if (shader == "fluidGradient") {
@@ -371,11 +426,10 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
             }
         }
 
-        if (shader == "liquidChrome") {
-            // API < 33 fallback: static vertical LinearGradient baseDark->baseLight->baseDark.
-            fallbackPaint.shader = chromeFallbackGradient(w, h)
+        if (shader == "liquidMetal") {
+            // API < 33 fallback: flat fill with the background color.
+            fallbackPaint.color = parseColor(colorBack)
             canvas.drawRect(0f, 0f, w, h, fallbackPaint)
-            fallbackPaint.shader = null
             return
         }
 
@@ -391,84 +445,48 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
         canvas.drawRect(0f, 0f, w, h, fallbackPaint)
     }
 
-    // Chrome variant palette + parameters, resolved CPU-side. Unknown -> silver.
-    private class ChromeVariant(
-        val baseDark: FloatArray,
-        val baseLight: FloatArray,
-        val highlight: FloatArray,
-        val edgeTint: FloatArray,
-        val iridescence: Float,
-        val highlightPowerFactor: Float
-    )
+    private fun setLiquidMetalUniforms(liquidMetal: RuntimeShader, w: Float, h: Float) {
+        liquidMetal.setFloatUniform("u_time", currentTimeSeconds())
+        liquidMetal.setFloatUniform("u_speed", speed.toFloat())
+        liquidMetal.setFloatUniform("u_resolution", w, h)
 
-    private fun resolveChromeVariant(variant: String): ChromeVariant {
-        return when (variant) {
-            "mercury" -> ChromeVariant(
-                floatArrayOf(0.02f, 0.03f, 0.05f),
-                floatArrayOf(0.85f, 0.90f, 0.98f),
-                floatArrayOf(0.98f, 0.99f, 1.0f),
-                floatArrayOf(0.65f, 0.75f, 0.95f),
-                0.0f, 1.0f
-            )
-            "blackChrome" -> ChromeVariant(
-                floatArrayOf(0.01f, 0.01f, 0.012f),
-                floatArrayOf(0.35f, 0.36f, 0.38f),
-                floatArrayOf(0.85f, 0.87f, 0.90f),
-                floatArrayOf(0.25f, 0.26f, 0.30f),
-                0.0f, 2.0f
-            )
-            "rainbowOil" -> ChromeVariant(
-                floatArrayOf(0.05f, 0.05f, 0.06f),
-                floatArrayOf(0.90f, 0.90f, 0.94f),
-                floatArrayOf(1.0f, 1.0f, 1.0f),
-                floatArrayOf(0.80f, 0.84f, 0.90f),
-                0.12f, 1.0f
-            )
-            else -> ChromeVariant(
-                floatArrayOf(0.05f, 0.05f, 0.06f),
-                floatArrayOf(0.95f, 0.95f, 0.97f),
-                floatArrayOf(1.0f, 1.0f, 1.0f),
-                floatArrayOf(0.85f, 0.88f, 0.92f),
-                0.0f, 1.0f
-            )
-        }
-    }
-
-    private fun setChromeUniforms(chrome: RuntimeShader, w: Float, h: Float) {
-        val v = resolveChromeVariant(variant)
-        chrome.setFloatUniform("u_time", currentTimeSeconds())
-        chrome.setFloatUniform("u_speed", speed.toFloat())
-        chrome.setFloatUniform("u_scale", scale.toFloat())
-        chrome.setFloatUniform("u_flow", flow.toFloat())
-        chrome.setFloatUniform("u_distortion", distortion.toFloat())
-        chrome.setFloatUniform("u_contrast", contrast.toFloat())
-        val highlightPower =
-            (4.0f / maxOf(highlightWidth.toFloat(), 0.05f)) * v.highlightPowerFactor
-        chrome.setFloatUniform("u_highlightPower", highlightPower)
-        chrome.setFloatUniform("u_highlightIntensity", highlightIntensity.toFloat())
-        chrome.setFloatUniform("u_grain", grain.toFloat())
-        chrome.setFloatUniform("u_resolution", w, h)
-        chrome.setFloatUniform("u_baseDark", v.baseDark)
-        chrome.setFloatUniform("u_baseLight", v.baseLight)
-        chrome.setFloatUniform("u_highlightColor", v.highlight)
-        chrome.setFloatUniform("u_edgeTint", v.edgeTint)
-        chrome.setFloatUniform("u_iridescence", v.iridescence)
-    }
-
-    private fun chromeFallbackGradient(w: Float, h: Float): LinearGradient {
-        val v = resolveChromeVariant(variant)
-        val dark = colorFromFloats(v.baseDark)
-        val light = colorFromFloats(v.baseLight)
-        return LinearGradient(
-            0f, 0f, 0f, h,
-            intArrayOf(dark, light, dark),
-            floatArrayOf(0f, 0.5f, 1f),
-            Shader.TileMode.CLAMP
+        val back = parseColor(colorBack)
+        liquidMetal.setFloatUniform(
+            "u_colorBack",
+            Color.red(back) / 255f,
+            Color.green(back) / 255f,
+            Color.blue(back) / 255f,
+            Color.alpha(back) / 255f
         )
+        val tint = parseColor(colorTint)
+        liquidMetal.setFloatUniform(
+            "u_colorTint",
+            Color.red(tint) / 255f,
+            Color.green(tint) / 255f,
+            Color.blue(tint) / 255f,
+            Color.alpha(tint) / 255f
+        )
+
+        liquidMetal.setFloatUniform("u_repetition", repetition.toFloat())
+        liquidMetal.setFloatUniform("u_softness", softness.toFloat())
+        liquidMetal.setFloatUniform("u_shiftRed", shiftRed.toFloat())
+        liquidMetal.setFloatUniform("u_shiftBlue", shiftBlue.toFloat())
+        liquidMetal.setFloatUniform("u_distortion", distortion.toFloat())
+        liquidMetal.setFloatUniform("u_contour", contour.toFloat())
+        liquidMetal.setFloatUniform("u_angle", angle.toFloat())
+        liquidMetal.setFloatUniform("u_shape", shapeToFloat(shape))
+        liquidMetal.setFloatUniform("u_grain", grain.toFloat())
     }
 
-    private fun colorFromFloats(c: FloatArray): Int {
-        return Color.rgb((c[0] * 255f).toInt(), (c[1] * 255f).toInt(), (c[2] * 255f).toInt())
+    private fun shapeToFloat(shape: String): Float {
+        return when (shape) {
+            "none" -> 0.0f
+            "circle" -> 1.0f
+            "daisy" -> 2.0f
+            "diamond" -> 3.0f
+            "metaballs" -> 4.0f
+            else -> 1.0f
+        }
     }
 
     private fun setFluidUniforms(fluid: RuntimeShader, w: Float, h: Float) {

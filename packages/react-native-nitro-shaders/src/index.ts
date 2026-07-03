@@ -7,5 +7,5 @@ import type {
 export type NitroShadersRef = HybridRef<NitroShadersProps, NitroShadersMethods>
 export { NitroShaders, ShaderSurface, type ShaderSurfaceProps } from './core/ShaderSurface'
 export { FluidGradient, type FluidGradientProps } from './effects/FluidGradient'
-export { LiquidChrome, type LiquidChromeProps } from './effects/LiquidChrome'
-export type { ChromeVariant } from './materials/chrome'
+export { LiquidMetal, type LiquidMetalProps } from './effects/LiquidMetal'
+export type { LiquidMetalShape } from './materials/liquid-metal'

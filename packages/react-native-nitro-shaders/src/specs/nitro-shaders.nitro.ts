@@ -16,12 +16,17 @@ export interface NitroShadersProps extends HybridViewProps {
   scale: number
   warp: number
   grain: number
-  variant: string
-  flow: number
+  // liquidMetal props:
+  shape: string
+  colorBack: string
+  colorTint: string
+  repetition: number
+  softness: number
+  shiftRed: number
+  shiftBlue: number
   distortion: number
-  contrast: number
-  highlightWidth: number
-  highlightIntensity: number
+  contour: number
+  angle: number
 }
 
 export interface NitroShadersMethods extends HybridViewMethods {}
