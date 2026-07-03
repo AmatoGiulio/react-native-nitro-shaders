@@ -1,5 +1,5 @@
 export const CHROME_DEFAULTS = {
-  scale: 2.4,
+  scale: 1.6,
   flow: 0.35,
   distortion: 1.2,
   contrast: 1.4,

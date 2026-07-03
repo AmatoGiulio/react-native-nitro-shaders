@@ -87,16 +87,16 @@ fragment float4 liquidChromeFragment(VertexOut in [[stage_in]],
   float t = u.time * u.speed;
   float2 p = uv * u.scale;
 
-  float eps = 1.0 / min(u.resolution.x, u.resolution.y) * u.scale;
+  float eps = 4.0 / min(u.resolution.x, u.resolution.y) * u.scale;
   float hx = heightAt(p + float2(eps, 0.0), t, u.flow) - heightAt(p - float2(eps, 0.0), t, u.flow);
   float hy = heightAt(p + float2(0.0, eps), t, u.flow) - heightAt(p - float2(0.0, eps), t, u.flow);
-  float3 normal = normalize(float3(-hx * u.distortion, -hy * u.distortion, 0.35));
+  float3 normal = normalize(float3(-hx * u.distortion, -hy * u.distortion, 0.6));
 
   float2 reflection = normal.xy * 0.5 + 0.5;
-  float bands = 0.45 * sin(reflection.y * 18.0 + normal.x * 5.0)
-              + 0.35 * sin(reflection.x * 12.0 + t * 0.35)
-              + 0.20 * sin((reflection.x + reflection.y) * 22.0);
-  float chrome = smoothstep(0.25, 0.95, bands);
+  float bands = 0.45 * sin(reflection.y * 6.0 + normal.x * 3.0)
+              + 0.35 * sin(reflection.x * 4.0 + t * 0.35)
+              + 0.20 * sin((reflection.x + reflection.y) * 8.0);
+  float chrome = smoothstep(0.15, 0.90, bands);
   float fresnel = pow(1.0 - max(dot(normal, float3(0.0, 0.0, 1.0)), 0.0), 3.0);
 
   float3 rgb = mix(u.baseDark.xyz, u.baseLight.xyz, chrome);
