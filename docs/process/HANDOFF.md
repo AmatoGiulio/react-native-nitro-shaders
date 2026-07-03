@@ -29,6 +29,15 @@ Tooling locale: installato `ffmpeg`/`ffprobe` via Homebrew per analisi video
 reference. I frame/crop estratti vivono solo in
 `/tmp/rn-nitro-shaders-video-analysis/` e non fanno parte del repo.
 
+Implementazione successiva (2026-07-04): baseline committata (`24d539f`), poi
+prima tranche R2 visual pipeline su Android:
+- `MaterialOrb` resta una demo legacy, ma ora il rendering Android usa shadow
+  ellittica nativa + Path organico nativo.
+- `material-orb.agsl` e' material shader puro: non decide piu' silhouette/alpha.
+- Lo shader orb consuma anche `u_motion*`; `MaterialOrb.tsx` passa motion uniform
+  risolte accanto ai vecchi uniform per compatibilita' demo.
+- Verifiche: `bun run typecheck`, `bun test`, `./gradlew :app:assembleDebug`.
+
 ## Architettura decisa (Giulio, 2026-07-03)
 - **Material** (5, piatti): `fluidGradient`, `liquidMetal`, `metal`, `water`,
   `iridescent`. Lo shader calcola solo il colore, mai la forma.
@@ -124,14 +133,13 @@ Diagnosi pipeline:
 - `u_motion*` esiste nel contratto R1 ma non guida ancora lo shader orb.
 
 Strategia R2 raccomandata:
-1. Separare skin demo orb da material: Android disegna shadow nativa + maschera
-   Path/oval organica, poi applica Paint shaderizzato.
-2. Rendere lo shader dei tre material puro: colore su coordinate normalizzate,
-   alpha sempre 1 dentro la skin; niente `if alpha <= 0`, niente clipping nero.
-3. Passare a `u_motion*` e mappare i preset reference ai default `metal/water/
-   iridescent`.
-4. Solo dopo lo split, rifinire lighting: env studio per `metal`, SSS/rim per
-   `water`, thin-film largo per `iridescent`.
+1. FATTO prima tranche demo Android: separare skin demo orb da material
+   (`MaterialOrb` disegna shadow nativa + Path organico, poi Paint shaderizzato).
+2. FATTO prima tranche demo Android: shader orb puro, alpha 1, niente clipping
+   nero generato dal fragment shader.
+3. FATTO per demo `MaterialOrb`: passaggio `u_motion*` accanto ai legacy uniform.
+4. ANCORA DA VALIDARE/RIFINIRE su device: lighting finale `metal`, SSS/rim
+   `water`, thin-film largo `iridescent` in base allo screenshot di Giulio.
 
 ## Prossimo task pianificato — R2 (Android materials piatti)
 - `MaterialView` (skin background) come wrapper pubblico di ShaderSurface che
@@ -147,6 +155,12 @@ Strategia R2 raccomandata:
   orb, confronto obbligatorio contro `docs/references/materials/metal.png`,
   `water.png`, `iridescent.png` e
   `liquid-orb-metal-swiftui-reference.mp4`.
+
+Prossimo task immediato:
+- Giulio valida visivamente la nuova demo Android `MaterialOrb` su device.
+- Se il bordo/ombra sono approvati, procedere allo split pubblico `MaterialView`
+  e al rename API `liquidChrome/liquidGlass/iridescentGlass` →
+  `metal/water/iridescent`.
 
 ## Debito tecnico
 1. iOS: material non portati in Metal/Swift; debito default library Metal.

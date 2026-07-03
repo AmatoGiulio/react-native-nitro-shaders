@@ -98,3 +98,11 @@ Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a f
 - Estratti frame e crop temporanei in `/tmp/rn-nitro-shaders-video-analysis/` per leggere motion, silhouette, shadow e differenze material; nessun derivato temporaneo aggiunto al repo.
 - Ricerca tecnica: Android `RuntimeShader`/AGSL come brush nel Canvas drawing pipeline; SwiftUI/Metal reference simili usano pipeline componibile con shader color/layer/time, non un unico mega shader accoppiato a forma e UI.
 - Diagnosi: la pipeline corrente `MaterialOrb` e' ancora legacy e accoppia material, silhouette e motion nello shader AGSL; per arrivare alla reference serve R2 con skin/orb demo nativa, ombra nativa separata, shader material puro e uniform `u_motion*`.
+
+## [2026-07-04] - R2 visual pipeline - Native orb skin + pure material shader
+- Commit baseline pulito creato prima dell'implementazione: `24d539f`.
+- Android `MaterialOrb` demo migrato a pipeline piu' vicina a Material × Motion × Skin: shadow ellittica nativa + Path organico nativo; il Paint usa `RuntimeShader` solo per il colore del material.
+- `material-orb.agsl` riscritto come shader material puro: niente silhouette, niente `alpha`/discard, output opaco dentro la skin; aggiunte uniform `u_motion*` e fallback legacy.
+- `MaterialOrb.tsx` ora passa anche `motionType`, `motionSpeed`, `motionAmp`, `motionWarp`, `motionDetail`, `motionSeed`, `motionPeriod`; i preset legacy restano supportati per la demo.
+- Preset orb allineati ai valori visibili nella reference video per water/iridescent e a un chrome piu' neutro.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` verde. Nessuna validazione visuale device eseguita dagli agenti.

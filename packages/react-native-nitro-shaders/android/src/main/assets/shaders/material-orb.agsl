@@ -1,11 +1,23 @@
 uniform float2 u_resolution;
 uniform float u_time;
 uniform float u_speed;
-uniform float u_orbMaterial; // 0: Chrome, 1: Glass, 2: Iridescent
+uniform float u_orbMaterial; // 0: metal, 1: water, 2: iridescent
 uniform float u_wobble;
 uniform float u_distortion;
 uniform float u_detail;
 uniform float u_materialColor;
+
+uniform float u_motionType;
+uniform float u_motionSpeed;
+uniform float u_motionAmp;
+uniform float u_motionWarp;
+uniform float u_motionDetail;
+uniform float u_motionSeed;
+uniform float u_motionPeriod;
+
+float orbSaturate(float v) {
+    return clamp(v, 0.0, 1.0);
+}
 
 float hash21(float2 p) {
     p = fract(p * float2(123.34, 456.21));
@@ -17,137 +29,149 @@ float noise(float2 p) {
     float2 i = floor(p);
     float2 f = fract(p);
     float2 u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash21(i), hash21(i + float2(1.0, 0.0)), u.x),
-               mix(hash21(i + float2(0.0, 1.0)), hash21(i + float2(1.0, 1.0)), u.x), u.y);
+    return mix(
+        mix(hash21(i), hash21(i + float2(1.0, 0.0)), u.x),
+        mix(hash21(i + float2(0.0, 1.0)), hash21(i + float2(1.0, 1.0)), u.x),
+        u.y
+    );
 }
 
 float fbm(float2 p) {
-    float v = 0.0, a = 0.5;
-    for (int i = 0; i < 4; i++) { 
-        v += a * noise(p); 
-        p = p * 2.0 + float2(11.5, 17.2); 
-        a *= 0.5; 
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 4; i++) {
+        v += a * noise(p);
+        p = p * 2.03 + float2(11.5, 17.2);
+        a *= 0.5;
     }
     return v;
 }
 
-// Studio di luce MatCap sferico (coordinate 0..1)
-float3 getMatCapEnv(float2 uvEnv) {
-    // Gradiente sferico morbido di base
-    float3 baseBg = mix(float3(0.1, 0.12, 0.15), float3(0.7, 0.75, 0.85), uvEnv.y);
-    
-    // Softbox principale in alto a sinistra (molto intenso)
-    float mainLight = smoothstep(0.45, 0.0, distance(uvEnv, float2(0.35, 0.75)));
-    // Luce di riempimento morbida in basso a destra
-    float fillLight = smoothstep(0.5, 0.0, distance(uvEnv, float2(0.7, 0.25)));
-    // Controluce (Rim) per staccare i bordi
-    float rimLight = smoothstep(0.2, 0.5, distance(uvEnv, float2(0.5, 0.5)));
+float resolvedSpeed() {
+    return max(u_motionSpeed, u_speed);
+}
 
-    float3 col = baseBg;
-    col += float3(1.4, 1.35, 1.3) * mainLight;
-    col += float3(0.3, 0.4, 0.5) * fillLight;
-    col += float3(0.4, 0.45, 0.5) * rimLight * 0.4;
-    
+float resolvedAmp() {
+    return max(u_motionAmp, u_wobble);
+}
+
+float resolvedWarp() {
+    return max(u_motionWarp, u_distortion);
+}
+
+float resolvedDetail() {
+    return max(u_motionDetail, u_detail);
+}
+
+float heightField(float2 p, float t, float detail) {
+    float scale = mix(1.45, 3.35, orbSaturate(detail * 0.55));
+    float2 flow = float2(t * 0.10, -t * 0.075);
+    float n = fbm(p * scale + flow + u_motionSeed);
+    float2 warp = float2(
+        fbm(p * 1.25 + float2(n * 1.7, t * 0.06)),
+        fbm(p * 1.25 + float2(4.2, n * 1.4 - t * 0.05))
+    );
+    return fbm(p * scale + (warp - 0.5) * 1.65 + flow);
+}
+
+float3 studioEnv(float3 r, float fold) {
+    float2 uv = r.xy * 0.5 + 0.5;
+    float3 floorCol = float3(0.05, 0.055, 0.06);
+    float3 skyCol = float3(0.86, 0.88, 0.90);
+    float3 col = mix(floorCol, skyCol, smoothstep(0.08, 0.94, uv.y));
+
+    float key = smoothstep(0.50, 0.02, distance(uv, float2(0.34, 0.76)));
+    float strip = smoothstep(0.045, 0.0, abs(uv.y - (0.70 + 0.13 * sin(uv.x * 8.0 + fold * 2.0))));
+    float darkBand = smoothstep(0.45, 0.86, fbm(uv * 4.0 + fold));
+    float fill = smoothstep(0.55, 0.0, distance(uv, float2(0.76, 0.30)));
+
+    col = mix(col, float3(0.00, 0.00, 0.00), darkBand * 0.42);
+    col += float3(1.20, 1.18, 1.12) * key;
+    col += float3(0.75, 0.78, 0.82) * strip;
+    col += float3(0.28, 0.36, 0.42) * fill;
     return col;
+}
+
+float3 normalAt(float2 p, float z, float t, float warp, float detail) {
+    float eps = 1.6 / min(u_resolution.x, u_resolution.y);
+    float h = heightField(p, t, detail);
+    float hx = heightField(p + float2(eps, 0.0), t, detail) - h;
+    float hy = heightField(p + float2(0.0, eps), t, detail) - h;
+    float bump = mix(0.55, 1.70, orbSaturate(warp));
+    return normalize(float3(p.x - hx * bump, p.y - hy * bump, z));
 }
 
 half4 main(float2 fragCoord) {
     float2 res = max(u_resolution, float2(1.0));
     float size = min(res.x, res.y);
-    
-    // Proporzioni centrate
     float2 uv = (fragCoord - 0.5 * res) / (0.5 * size);
-    uv.y = -uv.y; // Flip Y per orientazione corretta delle luci[cite: 1]
+    uv.y = -uv.y;
 
-    float t = u_time * u_speed;
-    
-    // --- 1. DEFORMAZIONE DELLA SILHOUETTE (Bordi Fluidi come in metal.png) ---
-    float angle = atan(uv.y, uv.x);
-    float edgeNoise = fbm(float2(cos(angle), sin(angle)) * 1.2 + t * 0.4);
-    float maxRadius = 0.88 + edgeNoise * (0.15 * u_wobble * u_distortion);
-    
-    float dist = length(uv);
-    float alpha = smoothstep(maxRadius, maxRadius - 0.015, dist);
-    if (alpha <= 0.0) return half4(0.0);
+    float speed = resolvedSpeed();
+    float amp = resolvedAmp();
+    float warp = resolvedWarp();
+    float detail = resolvedDetail();
+    float t = u_time * speed;
 
-    // Normalizziamo le coordinate interne rispetto alla silhouette fluida
-    float2 normUV = uv / maxRadius;
-    
-    // --- 2. GENERAZIONE DEL RUMORE DI FLUIDITÀ INTERNA ---
-    float2 warpUV = normUV * (mix(1.0, 2.5, u_detail)) + float2(t * 0.1, t * 0.08);
-    float n1 = fbm(warpUV);
-    float n2 = fbm(warpUV + vec2(n1 * 1.5)); // Domain warping per curve liquide reali
-    
-    // --- 3. CALCOLO GEOMETRIA 3D (Normali della Sfera) ---
-    // Applichiamo la distorsione liquida direttamente prima del calcolo della Z
-    float2 distortedUV = normUV + float2(n2 - 0.5, fbm(warpUV + 2.0) - 0.5) * (0.22 * u_distortion);
-    distortedUV = clamp(distortedUV, -0.99, 0.99); // Evita radici quadrate negative
-    
-    float z = sqrt(1.0 - dot(distortedUV, distortedUV));
-    float3 N = normalize(float3(distortedUV.x, distortedUV.y, z));
-    
-    // Vettori ottici
-    float3 V = float3(0.0, 0.0, 1.0);
-    float3 R = reflect(-V, N);
-    float NdotV = max(dot(N, V), 0.0);
-    float fresnel = pow(1.0 - NdotV, 3.5);
-
-    // --- 4. MAPPATURA CORRETTA MATCAP (0.0 a 1.0) ---
-    float2 matcapUV = R.xy * 0.5 + 0.5;
-    
-    // Campioniamo l'ambiente fluido distorto
-    float3 envColor = getMatCapEnv(matcapUV);
-    
-    float3 color = float3(0.0);
-    float mode = u_orbMaterial;
-
-    if (mode < 0.5) {
-        // === 1. LIQUID CHROME (metal.png) ===
-        // Contrasti esasperati tramite curve di potenza, riflessi metallici argentati puri
-        float3 chrome = pow(envColor, float3(2.2)) * 2.0;
-        
-        // Specular highlight acuto
-        float spec = pow(max(R.z, 0.0), 50.0);
-        
-        color = chrome + float3(1.0) * spec * 1.5;
-        // Scurisci leggermente le parti in ombra profonda per dare contrasto liquido
-        color *= smoothstep(-0.2, 0.6, N.z);
-        
-    } else if (mode < 1.5) {
-        // === 2. LIQUID GLASS / WATER (water.png) ===
-        // Sfumature di blu profondo e azzurro liquido (Assorbimento e sss interno)
-        float3 deepColor = float3(0.02, 0.18, 0.4);
-        float3 shallowColor = float3(0.35, 0.72, 0.98);
-        
-        // L'interno reagisce al rumore di flusso n2 creando le onde interne di water.png
-        float internalFlow = smoothstep(0.1, 0.9, n2);
-        float3 glassBody = mix(deepColor, shallowColor, internalFlow * 0.7 + fresnel * 0.3);
-        
-        // Riflesso ambientale sopra lo strato vitreo
-        float3 glassReflect = pow(envColor, float3(1.2)) * (fresnel * 0.8 + 0.1);
-        float spec = pow(max(R.z, 0.0), 80.0);
-        
-        color = glassBody + glassReflect + float3(0.9, 0.95, 1.0) * spec * 1.2;
-        
-    } else {
-        // === 3. IRIDESCENT (iridescent.png) ===
-        // Struttura perlata traslucida con spettro arcobaleno guidato sia dal fresnel che dal flusso liquido
-        float3 pearlBase = float3(0.93, 0.92, 0.95) * (NdotV * 0.3 + 0.7);
-        
-        // Arcobaleno dinamico basato sull'angolo di incidenza e deformazione iridescente
-        float iridPhase = fresnel * 1.3 + n2 * 0.4 - (t * 0.05);
-        float3 rainbow = 0.5 + 0.5 * cos(6.28318 * (iridPhase + float3(0.0, 0.33, 0.67)));
-        
-        // Combina i riflessi: l'iridescenza predomina sul bordo (fresnel alto)
-        color = mix(pearlBase, rainbow, smoothstep(0.2, 0.9, fresnel));
-        
-        // Riflesso ambientale leggero e speculare finissimo (vetroso)
-        float3 glassReflect = envColor * 0.2;
-        float spec = pow(max(R.z, 0.0), 90.0);
-        
-        color += glassReflect + float3(1.0) * spec * 0.9;
+    // The native Skin owns the silhouette. This shader only shades the material
+    // across the area painted by Android's Path.
+    float2 p = uv / 0.86;
+    float d = dot(p, p);
+    if (d > 0.985) {
+        p *= sqrt(0.985 / d);
+        d = dot(p, p);
     }
 
-    color = clamp(color, 0.0, 1.0);
-    return half4(half3(color), half(alpha));
+    float z = sqrt(max(0.0, 1.0 - d));
+    float3 baseN = normalize(float3(p.x, p.y, z));
+    float3 N = normalAt(p, z, t, warp, detail);
+    N = normalize(mix(baseN, N, orbSaturate(0.22 + amp * 0.48)));
+
+    float3 V = float3(0.0, 0.0, 1.0);
+    float3 R = reflect(-V, N);
+    float ndv = orbSaturate(dot(N, V));
+    float fresnel = pow(1.0 - ndv, 3.0);
+    float fold = heightField(p * 1.2, t, detail);
+    float3 env = studioEnv(R, fold);
+    float mode = u_orbMaterial;
+
+    float3 color;
+    if (mode < 0.5) {
+        float vein = smoothstep(0.44, 0.74, heightField(p * 1.85 + float2(0.0, t * 0.03), t, detail));
+        float3 chrome = pow(env, float3(1.55)) * 1.24;
+        chrome = mix(chrome, float3(0.015, 0.018, 0.020), vein * 0.50);
+        float spec = pow(orbSaturate(dot(N, normalize(float3(-0.35, 0.62, 0.70)))), 32.0);
+        float edgeTint = fresnel * 0.18;
+        color = chrome + spec * 0.78;
+        color += float3(0.36, 0.16, 0.38) * edgeTint * orbSaturate(1.0 - u_materialColor);
+        color += float3(0.20, 0.42, 0.26) * edgeTint * orbSaturate(u_materialColor);
+    } else if (mode < 1.5) {
+        float internal = heightField(p * 1.25 + float2(t * 0.04, -t * 0.08), t, detail);
+        float3 deep = float3(0.20, 0.43, 0.58);
+        float3 milk = float3(0.58, 0.82, 0.92);
+        float3 cyan = float3(0.50, 0.96, 1.0);
+        float body = smoothstep(0.12, 0.88, internal) * 0.58 + ndv * 0.18;
+        float rim = pow(fresnel, 0.58);
+        float spec = pow(orbSaturate(dot(N, normalize(float3(-0.28, 0.64, 0.72)))), 58.0);
+        color = mix(deep, milk, body);
+        color = mix(color, cyan, rim * 0.55);
+        color += env * (0.08 + fresnel * 0.18);
+        color += float3(1.0, 1.0, 1.0) * spec * 0.90;
+    } else {
+        float angle = atan(p.y, p.x);
+        float film = fresnel * 0.74 + fold * 0.24 + sin(angle * 2.0 + t * 0.12) * 0.055;
+        float3 rainbow = 0.5 + 0.5 * cos(6.28318 * (film + float3(0.02, 0.36, 0.70)));
+        float3 pearl = float3(0.94, 0.92, 0.88);
+        pearl += float3(0.05, 0.02, 0.08) * (1.0 - ndv);
+        float band = smoothstep(0.12, 0.74, fresnel + fold * 0.25);
+        float specA = pow(orbSaturate(dot(N, normalize(float3(-0.45, 0.55, 0.70)))), 48.0);
+        float specB = pow(orbSaturate(dot(N, normalize(float3(0.36, -0.50, 0.78)))), 70.0);
+        color = mix(pearl, rainbow, band * 0.58);
+        color += env * 0.10 + float3(1.0) * (specA * 0.55 + specB * 0.28);
+    }
+
+    float vignette = smoothstep(1.04, 0.15, length(p));
+    color *= mix(0.82, 1.08, vignette);
+    color += (hash21(fragCoord + u_time) - 0.5) / 255.0;
+    return half4(half3(clamp(color, 0.0, 1.0)), 1.0);
 }

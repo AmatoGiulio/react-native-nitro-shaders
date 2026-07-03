@@ -5,6 +5,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RadialGradient
 import android.graphics.RuntimeShader
 import android.graphics.Shader
 import android.os.Build
@@ -13,6 +15,10 @@ import android.view.View
 import androidx.annotation.Keep
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.uimanager.ThemedReactContext
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
 
 @Keep
 @DoNotStrip
@@ -495,6 +501,8 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
     private var liquidMetalRuntimeShader: RuntimeShader? = null
 
     private val materialOrbPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val materialOrbShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val materialOrbPath = Path()
     private var materialOrbShaderInit = false
     private var materialOrbRuntimeShader: RuntimeShader? = null
 
@@ -570,9 +578,7 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
                 val materialOrb = materialOrbShader()
                 if (materialOrb != null) {
                     setMaterialOrbUniforms(materialOrb, w, h)
-                    // The raymarched shader defines its own organic silhouette via alpha;
-                    // fill the quad and let alpha composite over the transparent background.
-                    canvas.drawRect(0f, 0f, w, h, materialOrbPaint)
+                    drawMaterialOrb(canvas, w, h)
                     return
                 }
             } else if (shader == "liquidMetal") {
@@ -640,6 +646,101 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
         materialOrb.setFloatUniform("u_distortion", distortion.toFloat())
         materialOrb.setFloatUniform("u_detail", detail.toFloat())
         materialOrb.setFloatUniform("u_materialColor", materialColor.toFloat())
+        materialOrb.setFloatUniform("u_motionType", resolvedMotionType())
+        materialOrb.setFloatUniform("u_motionSpeed", resolvedMotionSpeed())
+        materialOrb.setFloatUniform("u_motionAmp", resolvedMotionAmp())
+        materialOrb.setFloatUniform("u_motionWarp", resolvedMotionWarp())
+        materialOrb.setFloatUniform("u_motionDetail", resolvedMotionDetail())
+        materialOrb.setFloatUniform("u_motionSeed", motionSeed.toFloat())
+        materialOrb.setFloatUniform("u_motionPeriod", motionPeriod.toFloat())
+    }
+
+    private fun drawMaterialOrb(canvas: Canvas, w: Float, h: Float) {
+        val time = currentTimeSeconds()
+        buildMaterialOrbPath(w, h, time)
+        drawMaterialOrbShadow(canvas, w, h)
+        canvas.drawPath(materialOrbPath, materialOrbPaint)
+    }
+
+    private fun buildMaterialOrbPath(w: Float, h: Float, time: Float) {
+        val size = min(w, h)
+        val radius = size * 0.405f
+        val cx = w * 0.5f
+        val cy = h * 0.455f
+        val wobbleAmount = resolvedMotionAmp().coerceIn(0f, 1.4f)
+        val warpAmount = resolvedMotionWarp().coerceIn(0f, 1.4f)
+        val speedAmount = resolvedMotionSpeed().coerceAtLeast(0.05f)
+        val edgeAmp = (0.018f + 0.036f * wobbleAmount + 0.018f * warpAmount) * radius
+        val phase = time * speedAmount
+        val points = 80
+
+        materialOrbPath.reset()
+        for (i in 0 until points) {
+            val a = (i.toDouble() / points.toDouble() * PI * 2.0).toFloat()
+            val wave =
+                sin(a * 2.0f + phase * 0.86f) * 0.48f +
+                sin(a * 3.0f - phase * 0.63f + 1.2f) * 0.34f +
+                sin(a * 5.0f + phase * 0.31f + 2.1f) * 0.18f
+            val r = radius + edgeAmp * wave
+            val x = cx + cos(a) * r
+            val y = cy + sin(a) * r
+            if (i == 0) {
+                materialOrbPath.moveTo(x, y)
+            } else {
+                materialOrbPath.lineTo(x, y)
+            }
+        }
+        materialOrbPath.close()
+    }
+
+    private fun drawMaterialOrbShadow(canvas: Canvas, w: Float, h: Float) {
+        val size = min(w, h)
+        val radius = size * 0.405f
+        val cx = w * 0.5f
+        val cy = h * 0.455f
+        val shadowCx = cx
+        val shadowCy = cy + radius * 0.92f
+        val shadowRx = radius * 0.68f
+        val shadowRy = radius * 0.16f
+        val strength = when {
+            orbMaterial < 0.5 -> 54
+            orbMaterial < 1.5 -> 36
+            else -> 42
+        }
+
+        materialOrbShadowPaint.shader = RadialGradient(
+            shadowCx,
+            shadowCy,
+            shadowRx,
+            intArrayOf(Color.argb(strength, 0, 0, 0), Color.argb(0, 0, 0, 0)),
+            floatArrayOf(0.0f, 1.0f),
+            Shader.TileMode.CLAMP
+        )
+        canvas.save()
+        canvas.scale(1.0f, shadowRy / shadowRx, shadowCx, shadowCy)
+        canvas.drawCircle(shadowCx, shadowCy, shadowRx, materialOrbShadowPaint)
+        canvas.restore()
+        materialOrbShadowPaint.shader = null
+    }
+
+    private fun resolvedMotionType(): Float {
+        return if (motionType > 0.0) motionType.toFloat() else 2.0f
+    }
+
+    private fun resolvedMotionSpeed(): Float {
+        return if (motionSpeed > 0.0) motionSpeed.toFloat() else speed.toFloat()
+    }
+
+    private fun resolvedMotionAmp(): Float {
+        return if (motionAmp > 0.0) motionAmp.toFloat() else wobble.toFloat()
+    }
+
+    private fun resolvedMotionWarp(): Float {
+        return if (motionWarp > 0.0) motionWarp.toFloat() else distortion.toFloat()
+    }
+
+    private fun resolvedMotionDetail(): Float {
+        return if (motionDetail > 0.0) motionDetail.toFloat() else detail.toFloat()
     }
 
     private fun setLiquidMetalUniforms(liquidMetal: RuntimeShader, w: Float, h: Float) {

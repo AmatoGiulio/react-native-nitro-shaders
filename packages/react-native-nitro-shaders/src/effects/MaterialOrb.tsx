@@ -4,9 +4,11 @@ import {
   MATERIAL_ORB_PRESETS,
   type MaterialOrbMaterial,
 } from '../materials/material-orb'
+import { resolveMotion, type Motion } from '../motions'
 
 export type MaterialOrbProps = {
   material?: MaterialOrbMaterial
+  motion?: Motion
   speed?: number
   wobble?: number
   distortion?: number
@@ -21,11 +23,22 @@ export type MaterialOrbProps = {
 export function MaterialOrb(props: MaterialOrbProps) {
   const material = props.material ?? 'liquidChrome'
   const preset = MATERIAL_ORB_PRESETS[material]
+  const baseMotion = resolveMotion(props.motion, preset.materialName)
+  const resolvedMotion =
+    props.motion === undefined
+      ? {
+          ...baseMotion,
+          motionSpeed: preset.speed,
+          motionAmp: preset.wobble,
+          motionWarp: preset.distortion,
+          motionDetail: preset.detail,
+        }
+      : baseMotion
   const {
-    speed = preset.speed,
-    wobble = preset.wobble,
-    distortion = preset.distortion,
-    detail = preset.detail,
+    speed = resolvedMotion.motionSpeed,
+    wobble = resolvedMotion.motionAmp,
+    distortion = resolvedMotion.motionWarp,
+    detail = resolvedMotion.motionDetail,
     materialColor = preset.materialColor,
     animated = true,
     paused = false,
@@ -44,6 +57,13 @@ export function MaterialOrb(props: MaterialOrbProps) {
       distortion={distortion}
       detail={detail}
       materialColor={materialColor}
+      motionType={resolvedMotion.motionType}
+      motionSpeed={speed}
+      motionAmp={wobble}
+      motionWarp={distortion}
+      motionDetail={detail}
+      motionSeed={resolvedMotion.motionSeed}
+      motionPeriod={resolvedMotion.motionPeriod}
       animated={animated}
       paused={paused}
       debugTime={debugTime}
