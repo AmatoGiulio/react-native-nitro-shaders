@@ -7,11 +7,13 @@ Se sei un agente e stai leggendo questo file, le regole qui sotto sono vincolant
 
 `react-native-nitro-shaders` — libreria React Native con runtime shader nativo condiviso
 (Metal su iOS, AGSL/RuntimeShader su Android), costruita su Nitro Modules.
-Architettura: core condiviso → material → componenti pubblici (vedi docs/process/STACK.md).
+Architettura: Material × Motion × Skin (vedi docs/architecture/material-motion-skin.md).
 
-Fonte di verità tecnica: `/docs/spec/ARC_shader_native_spec.md` (lo spec originale).
-Qualsiasi conflitto tra questo file, AGENTS.md, docs/process/STACK.md e lo spec va segnalato
-all'orchestratore, mai risolto autonomamente da un agente.
+Fonte di verità dell'API: `docs/architecture/material-motion-skin.md`.
+Reference tecnico (matematica shader, piattaforme): `docs/engineering/shader-techniques.md`.
+Mappa completa della doc: `docs/README.md`.
+Qualsiasi conflitto tra questo file, AGENTS.md, docs/process/STACK.md e l'architettura va
+segnalato all'orchestratore, mai risolto autonomamente da un agente.
 
 ## Gerarchia decisionale — NON derogabile
 
@@ -57,6 +59,10 @@ Nessuna sessione si chiude senza questo aggiornamento.
 
 ## Cosa NON fare mai (per qualsiasi agente)
 
+- **MAI usare Argent MCP / emulatori / simulatori / Metro in questo progetto.**
+  L'orchestratore e gli agenti si limitano a implementare, eseguire `bun run typecheck`
+  (nel package `packages/react-native-nitro-shaders`) e test unitari/funzionali.
+  La validazione visiva su device è ESCLUSIVAMENTE di Giulio.
 - Non installare dipendenze non previste in docs/process/STACK.md senza approvazione esplicita.
 - Non modificare `nitro.json` / struttura HybridObject senza direttiva dell'orchestratore
   (rompe autolinking e codegen a cascata).

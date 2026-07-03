@@ -10,7 +10,7 @@ come mandato di comportamento, ma tutte le sezioni come contesto.
 **Unica mente decisionale del progetto.** Nessun altro agente decide nulla.
 
 Responsabilità:
-- Scompone lo spec (`/docs/spec/ARC_shader_native_spec.md`) e la roadmap (docs/process/STACK.md)
+- Scompone l'architettura (`docs/architecture/material-motion-skin.md`) e la roadmap (docs/process/STACK.md)
   in task atomici, uno alla volta o in batch esplicitamente indipendenti.
 - Scrive le direttive per developer/worker nel formato fisso (vedi sotto).
 - Revisiona OGNI output prima di considerarlo approvato. La revisione controlla:

@@ -11,3 +11,7 @@ export { LiquidMetal, type LiquidMetalProps } from './effects/LiquidMetal'
 export { MaterialOrb, type MaterialOrbProps } from './effects/MaterialOrb'
 export type { LiquidMetalShape } from './materials/liquid-metal'
 export type { MaterialOrbMaterial } from './materials/material-orb'
+
+// Material × Motion × Skin architecture (see docs/architecture/material-motion-skin.md).
+export type { MaterialName } from './materials/catalog'
+export type { Motion, MotionType } from './motions'

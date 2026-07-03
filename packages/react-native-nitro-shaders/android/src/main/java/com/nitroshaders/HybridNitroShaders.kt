@@ -221,6 +221,62 @@ class HybridNitroShaders(val context: ThemedReactContext): HybridNitroShadersSpe
             _materialColor = value
             shaderSurfaceView.materialColor = value
         }
+
+    private var _motionType = 0.0
+    override var motionType: Double
+        get() = _motionType
+        set(value) {
+            _motionType = value
+            shaderSurfaceView.motionType = value
+        }
+
+    private var _motionSpeed = 0.0
+    override var motionSpeed: Double
+        get() = _motionSpeed
+        set(value) {
+            _motionSpeed = value
+            shaderSurfaceView.motionSpeed = value
+        }
+
+    private var _motionAmp = 0.0
+    override var motionAmp: Double
+        get() = _motionAmp
+        set(value) {
+            _motionAmp = value
+            shaderSurfaceView.motionAmp = value
+        }
+
+    private var _motionWarp = 0.0
+    override var motionWarp: Double
+        get() = _motionWarp
+        set(value) {
+            _motionWarp = value
+            shaderSurfaceView.motionWarp = value
+        }
+
+    private var _motionDetail = 0.0
+    override var motionDetail: Double
+        get() = _motionDetail
+        set(value) {
+            _motionDetail = value
+            shaderSurfaceView.motionDetail = value
+        }
+
+    private var _motionSeed = 0.0
+    override var motionSeed: Double
+        get() = _motionSeed
+        set(value) {
+            _motionSeed = value
+            shaderSurfaceView.motionSeed = value
+        }
+
+    private var _motionPeriod = 0.0
+    override var motionPeriod: Double
+        get() = _motionPeriod
+        set(value) {
+            _motionPeriod = value
+            shaderSurfaceView.motionPeriod = value
+        }
 }
 
 private class ShaderSurfaceView(context: Context): View(context), Choreographer.FrameCallback {
@@ -377,6 +433,48 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
             invalidate()
         }
 
+    var motionType: Double = 0.0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var motionSpeed: Double = 0.0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var motionAmp: Double = 0.0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var motionWarp: Double = 0.0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var motionDetail: Double = 0.0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var motionSeed: Double = 0.0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var motionPeriod: Double = 0.0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fluidPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -472,6 +570,8 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
                 val materialOrb = materialOrbShader()
                 if (materialOrb != null) {
                     setMaterialOrbUniforms(materialOrb, w, h)
+                    // The raymarched shader defines its own organic silhouette via alpha;
+                    // fill the quad and let alpha composite over the transparent background.
                     canvas.drawRect(0f, 0f, w, h, materialOrbPaint)
                     return
                 }

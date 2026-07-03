@@ -5,8 +5,18 @@ import { MaterialOrb } from 'react-native-nitro-shaders';
 export default function App() {
   return (
     <View style={styles.container}>
-      <MaterialOrb material="liquidChrome" style={styles.surface} />
-      <Text style={styles.label}>MaterialOrb liquidChrome</Text>
+      <View style={styles.item}>
+        <MaterialOrb material="liquidChrome" style={styles.surface} />
+        <Text style={styles.label}>liquidChrome</Text>
+      </View>
+      <View style={styles.item}>
+        <MaterialOrb material="liquidGlass" style={styles.surface} />
+        <Text style={styles.label}>liquidGlass</Text>
+      </View>
+      <View style={styles.item}>
+        <MaterialOrb material="iridescentGlass" style={styles.surface} />
+        <Text style={styles.label}>iridescentGlass</Text>
+      </View>
       <StatusBar style="auto" />
     </View>
   );
@@ -18,13 +28,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#f7f8fb',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 16,
+    gap: 24,
+  },
+  item: {
+    alignItems: 'center',
+    gap: 8,
   },
   surface: {
     width: 220,
     height: 220,
-    overflow: 'hidden',
-    borderRadius: 220,
   },
   label: {
     color: '#15181f',

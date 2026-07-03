@@ -1,6 +1,6 @@
 # Attribution — liquid-metal reference
 
-`liquid-metal-paper-design-reference.ts` is copied unmodified from
+`paper-design-reference.ts` is copied unmodified from
 https://github.com/paper-design/shaders
 (`packages/shaders/src/shaders/liquid-metal.ts`), licensed under the
 Apache License, Version 2.0. Copyright paper-design.

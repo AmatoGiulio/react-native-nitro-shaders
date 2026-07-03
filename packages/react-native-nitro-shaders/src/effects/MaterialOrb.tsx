@@ -1,7 +1,7 @@
 import React from 'react'
 import { ShaderSurface, type ShaderSurfaceProps } from '../core/ShaderSurface'
 import {
-  MATERIAL_ORB_DEFAULTS,
+  MATERIAL_ORB_PRESETS,
   type MaterialOrbMaterial,
 } from '../materials/material-orb'
 
@@ -18,22 +18,15 @@ export type MaterialOrbProps = {
   style?: ShaderSurfaceProps['style']
 }
 
-function materialToFloat(material: MaterialOrbMaterial): number {
-  if (material === 'liquidChrome') {
-    return 0
-  }
-
-  return MATERIAL_ORB_DEFAULTS.orbMaterial
-}
-
 export function MaterialOrb(props: MaterialOrbProps) {
+  const material = props.material ?? 'liquidChrome'
+  const preset = MATERIAL_ORB_PRESETS[material]
   const {
-    material = 'liquidChrome',
-    speed = MATERIAL_ORB_DEFAULTS.speed,
-    wobble = MATERIAL_ORB_DEFAULTS.wobble,
-    distortion = MATERIAL_ORB_DEFAULTS.distortion,
-    detail = MATERIAL_ORB_DEFAULTS.detail,
-    materialColor = MATERIAL_ORB_DEFAULTS.materialColor,
+    speed = preset.speed,
+    wobble = preset.wobble,
+    distortion = preset.distortion,
+    detail = preset.detail,
+    materialColor = preset.materialColor,
     animated = true,
     paused = false,
     debugTime = -1,
@@ -45,7 +38,7 @@ export function MaterialOrb(props: MaterialOrbProps) {
       shader="materialOrb"
       color="#000000"
       colors={[]}
-      orbMaterial={materialToFloat(material)}
+      orbMaterial={preset.orbMaterial}
       speed={speed}
       wobble={wobble}
       distortion={distortion}

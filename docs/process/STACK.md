@@ -4,6 +4,11 @@ Decisioni tecniche vincolanti. Un developer non sceglie tra alternative qui
 elencate come "decise" — le esegue. Le sezioni marcate "aperto" sono le uniche
 su cui l'orchestratore può ancora deliberare (e solo lui).
 
+> **Architettura pubblica: vedi `docs/architecture/material-motion-skin.md`
+> (Material × Motion × Skin).** Quel documento è la fonte di verità dell'API.
+> STACK.md ne recepisce struttura src, naming e roadmap; in caso di conflitto
+> vince l'architettura. Reference tecnico: `docs/engineering/shader-techniques.md`.
+
 ## Stack
 
 | Layer | Scelta | Motivo |
@@ -28,9 +33,10 @@ react-native-nitro-shaders/
 │   └── nitro-shaders/        # il pacchetto pubblico (npm: react-native-nitro-shaders)
 │       ├── src/
 │       │   ├── core/         # runtime condiviso: ShaderSurface, uniform buffer,
-│       │   │                 # lifecycle, noise/fBm comuni. NON pubblico da solo.
-│       │   ├── materials/    # logica shader per famiglia (fluidGradient, liquidChrome...)
-│       │   ├── effects/      # componenti React pubblici che espongono i materials
+│       │   │                 # ticker, lifecycle, noise/fBm comuni. NON pubblico da solo.
+│       │   ├── materials/    # definizione TS dei 5 material + default (aspetto)
+│       │   ├── motions/      # tipi Motion, MOTION_DEFAULTS per material, → uniform
+│       │   ├── skins/        # componenti pubblici MaterialView/MaterialText/MaterialSvg
 │       │   └── index.ts      # unico entry pubblico del pacchetto
 │       ├── ios/               # HybridObject Swift + Metal
 │       ├── android/           # HybridObject Kotlin + AGSL
@@ -38,14 +44,19 @@ react-native-nitro-shaders/
 │       ├── nitro.json
 │       └── package.json
 ├── docs/
-│   └── spec/ARC_shader_native_spec.md
+│   ├── README.md            # indice della documentazione
+│   ├── architecture/        # design pubblico (fonte di verità API)
+│   ├── engineering/         # matematica shader, note piattaforma
+│   ├── process/             # STACK.md, HANDOFF.md
+│   └── references/          # screenshot target, attribution, ref esterni
 ├── CLAUDE.md
 ├── AGENTS.md
-├── docs/process/STACK.md
 ├── CHANGELOG.md
-├── docs/process/HANDOFF.md
 └── turbo.json
 ```
+
+Nota: la struttura `src/` sopra (`skins/`, `motions/`) è il TARGET dell'architettura
+v2; è in migrazione (R1 completata). `cpp/` esiste solo se serve logica non-shader.
 
 Decisione presa (vedi conversazione precedente): **un solo pacchetto pubblico
 ora**, modulare internamente. Estrazione di `core` in pacchetto privato separato
@@ -54,37 +65,46 @@ questa condizione si verifica).
 
 ## Convenzioni di naming
 
-- Componenti pubblici: `PascalCase` diretti (`FluidGradient`, `LiquidChrome`),
-  nessun prefisso `Nitro`/`RN` nel nome del componente — solo nel nome del pacchetto.
-- HybridObject: prefisso `Hybrid` + nome capability (`HybridShaderSurface`, non
-  `HybridFluidGradientView` — l'oggetto nativo è il runtime, non l'effetto).
+- Componenti pubblici = le tre **Skin**: `MaterialView`, `MaterialText`,
+  `MaterialSvg`. Non esistono piu' componenti-per-effetto (`FluidGradient`,
+  `LiquidMetal`, `MaterialOrb` sono rimossi). Nessun prefisso `Nitro`/`RN` nel
+  nome del componente — solo nel nome del pacchetto.
+- Material = valore della prop `material` (stringa o oggetto), non un componente:
+  `'fluidGradient' | 'liquidMetal' | 'metal' | 'water' | 'iridescent'`.
+- Motion = valore della prop `motion`: `'none' | 'flow' | 'wobble' | 'loop'`
+  (o oggetto con parametri).
+- HybridObject: prefisso `Hybrid` + nome capability (`HybridShaderSurface`,
+  l'oggetto nativo è il runtime, non l'effetto).
 - Props booleane: sempre positive (`animated`, mai `notAnimated`/`disableAnimation`).
 - File shader nativi: `<material>.metal`, `<material>.agsl` — nome material in
   lowercase-kebab, coerente col nome in `materials/`.
 
-## Roadmap (fasi)
+## Roadmap
 
-1. **Fase 1 — Core runtime**: `ShaderSurface` HybridObject (Metal + AGSL),
-   uniform buffer generico, lifecycle (mount/unmount/resize), noise/fBm condivisi.
-   Nessun material ancora. Definition of done: un quadrato con un colore solido
-   renderizzato via shader su entrambe le piattaforme, driven da JS.
-2. **Fase 2 — FluidGradient (MVP)**: primo material reale sopra il core.
-   Valida che il core sia sufficiente senza modifiche strutturali.
-3. **Fase 3 — LiquidChrome**: secondo material. Se richiede modifiche al core,
-   quelle modifiche sono il segnale che il core non era ancora stabile in Fase 1
-   — si documentano in CHANGELOG come "core breaking change, motivo: X".
-4. **Fase 4 — valutazione split**: solo dopo Fase 3, l'orchestratore valuta se
-   estrarre `@internal/core-native` (privato) e se separare `LiquidChrome` in
-   pacchetto pubblico a sé — decisione esplicita di Giulio, non automatica.
-5. **Fase 5 — effetti aggiuntivi**: dot-grid/pixel-matrix (ispirato a Immagine 4),
-   varianti/preset con nome (`variant="mercury"`) sopra i material esistenti.
+Le Fasi 1–4 (core, FluidGradient, LiquidMetal, primo MaterialOrb) sono STORIA
+COMPLETATA — vedi CHANGELOG. Da qui in poi vale la roadmap v2 dell'architettura
+Material × Motion × Skin (dettaglio in `docs/architecture/material-motion-skin.md`):
+
+1. **R1 — Contratto**: tipi TS `Material`/`Motion`, spec Nitro con uniform
+   motion condivise + uniform per-material, codegen. DoD: typecheck verde.
+2. **R2 — Android materials piatti**: split `material-orb` in shading puro,
+   `MaterialView` con i 5 material su rect + motion plumbing. DoD: validazione
+   visiva Giulio dei 5 material.
+3. **R3 — Skin testo Android** (`MaterialText` via drawText). DoD: Giulio.
+4. **R4 — Skin SVG Android** (`MaterialSvg` via drawPath). DoD: Giulio.
+5. **R5 — iOS**: porting materials + skin (mask/stencil), debito default
+   library Metal. BLOCKED finché Giulio non valida R2 su Android.
+6. **R6 — Demo galleria** + rimozione alias residui prima della pubblicazione.
 
 Nessuna fase parte prima che la precedente abbia Definition of Done verificata.
+Regola operativa vincolante: **gli agenti non usano Argent/emulatori/Metro**
+(vedi CLAUDE.md); implementano, fanno typecheck e unit test. La validazione
+visiva (DoD) la esegue solo Giulio.
 
 ## Aperto (decide solo l'orchestratore, con Giulio se serve)
 
 - Se il fallback Android <API 33 usa OpenGL ES custom o si accetta minSdk 33
   (da valutare in base a share device target reale — vedi analytics FP Holding
   se rilevante, altrimenti dati pubblici Android).
-- Naming esatto dei preset in Fase 5 (`mercury`, `aurora`, ecc. — vanno scelti,
-  non copiati 1:1 da shaders.com per motivi di originalità/branding).
+- `fluidGradient`: `speed`/`warp` migrano interamente nel Motion o restano anche
+  come parametro material (da confermare in R1 — vedi architecture doc).

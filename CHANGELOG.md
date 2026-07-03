@@ -48,3 +48,53 @@ Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a f
 - Validazione: `bun run typecheck` verde e `:app:assembleDebug` verde.
 - Runtime Android: primo crash AGSL per helper `saturate` duplicato risolto rinominandolo `orbSaturate`; app avviata su emulatore e screenshot acquisiti.
 - Rifinitura visuale: F4-D1b ha rimosso noise maculato; F4-D1c ha reintrodotto marbling chrome largo e morbido. Stato attuale: base visibile e stabile, ancora da iterare verso reference per piu' liquid blob e highlights organici.
+
+## [2026-07-03] - Fase 4 - MaterialOrb completo (3 material, Android, da validare)
+- F4-D2: riscritto `material-orb.agsl` con geometria orb condivisa (silhouette wobble + SDF + normali da fold field a bassa frequenza) e tre material mode su `u_orbMaterial`: 0 liquidChrome (base argento chiara, vene scure larghe, highlight ampi, tinte verde/viola solo al bordo — correzione del render troppo scuro/turbolento), 1 liquidGlass (gel azzurro lattiginoso, rim ciano, caustiche soffuse, spec piccolo, alpha leggermente translucida), 2 iridescentGlass (perla lattiginosa, bande arcobaleno vincolate al bordo via fresnel).
+- TS: `MaterialOrbMaterial` esteso a `'liquidChrome' | 'liquidGlass' | 'iridescentGlass'`; aggiunto `MATERIAL_ORB_PRESETS` con i default per-material osservati dalla reference (MATERIALS_ANALYSIS); `MaterialOrb` ora risolve i default dal preset del material scelto.
+- Demo example: tre orb impilati con label, come la reference overview.
+- Nessuna modifica necessaria a Kotlin/nitro spec: plumbing uniform gia' completo da F4-D1.
+- Verifica: rigenerato Nitrogen (gitignorato, mancava su questo Mac), `bun run typecheck` verde nel package; `:app:installDebug` verde (prebuild Expo eseguito, cartella `apps/example/android` generata localmente).
+- Direttiva di Giulio recepita e scritta in CLAUDE.md: MAI usare Argent/emulatori/Metro in questo progetto; solo implementazione + typecheck + unit test. Validazione visiva solo di Giulio.
+- Scartato: validazione visiva su emulatore da parte dell'agente (vietata dalla nuova direttiva).
+
+## [2026-07-03] - Ri-architettura - Material × Motion × Skin
+- Giulio ha ridefinito l'API: la libreria espone "materiali pelle viva" su tre assi ortogonali. Creato `docs/spec/ARCHITECTURE.md` come nuova fonte di verita' dell'API pubblica.
+- **Material** (5, piatti, niente famiglie): `fluidGradient`, `liquidMetal` (Paper Apache 2.0), `metal`, `water`, `iridescent`. Lo shader del material calcola solo il colore della superficie, mai la forma.
+- **Motion** = categoria di oggetti separata (prop `motion`), modello ibrido deciso da Giulio: tipi condivisi `none`/`flow`/`wobble`/`loop`, default e interpretazione per-material, opzionale e sovrascrivibile. Definite le uniform motion condivise da aggiungere allo spec Nitro.
+- **Skin** = 3 componenti pubblici `MaterialView`/`MaterialText`/`MaterialSvg`. I material possono rivestire background, testo e path SVG. Metafora di Giulio (il vestito): skin = corpo, material = tessuto/tratti, motion = vestibilita'. Regola dura: silhouette nel layer nativo di disegno, non nello shader.
+- Decisioni prese da Giulio: naming skin `MaterialView/Text/Svg`; alias `FluidGradient`/`LiquidMetal`/`MaterialOrb` RIMOSSI subito (nessun utente esterno); l'orb non e' piu' un material (silhouette fuori dallo shader). Decisione aperta: se `speed`/`warp` di fluidGradient migrano interamente nel Motion (da confermare in R1).
+- Aggiornati: STACK.md (struttura src `core/materials/motions/skins`, naming, roadmap v2 R1..R6), CLAUDE.md (divieto Argent per gli agenti), MATERIALS_ANALYSIS.md (marcato "superato in parte"). Nuove memorie: `architecture-material-motion-skin`, `no-argent-orchestrator`.
+- Nessun codice v2 ancora scritto: prossimo task R1 (contratto TS `Material`/`Motion` + uniform Nitro + codegen, DoD typecheck verde). Codice esistente (i vecchi componenti e material-orb) da migrare.
+
+## [2026-07-03] - R1 - Contratto Material/Motion (2 dev in parallelo)
+- Orchestratore ha splittato R1 in due stream su file disgiunti e delegato a due developer in parallelo (Dev A/Opus contratto TS, Dev B/Sonnet contratto nativo), poi integrato di persona.
+- Dev A: `src/materials/catalog.ts` (`MaterialName` + `MATERIAL_NAMES`) e `src/motions/index.ts` (`MotionType`, `Motion`, `ResolvedMotion`, `MOTION_TYPE_VALUES`, `MOTION_DEFAULTS` per-material, `resolveMotion()`). Semantica ibrida: default per-material sovrascrivibili da `motion` (stringa = solo tipo, oggetto = merge parametri).
+- Dev B: spec Nitro esteso (additivo) con 7 uniform motion condivise (`motionType/Speed/Amp/Warp/Detail/Seed/Period`); codegen Nitrogen rigenerato (propagato in 12 file generati); override Kotlin in `HybridNitroShaders.kt` che memorizzano il valore (nessun `setFloatUniform`, per non crashare AGSL non dichiaranti l'uniform).
+- Swift BLOCKED (legittimo): `ios/HybridNitroShaders.swift` non implementa nemmeno le prop orb esistenti (orbMaterial/wobble/detail/materialColor assenti). Nessun pattern da replicare → storage motion lato Swift RIMANDATO a R5 (fase iOS, gia' BLOCKED per Mac). Registrato come debito iOS.
+- Integrazione orchestratore: export pubblici in `index.ts` (`MaterialName`, `Motion`, `MotionType`); unit test funzionale `src/motions/index.test.ts` via `bun test` (runner integrato, zero nuove dipendenze).
+- Verifica: `bun run typecheck` verde; `bun test` 6/6 pass (20 assert). DoD R1 raggiunta.
+- Decisione aperta ancora da confermare in R2: se `speed`/`warp` di fluidGradient migrano interamente nel Motion.
+
+## [2026-07-03] - Cleanup - Repo senza ambiguita' + ristrutturazione docs
+- Direttiva Giulio (massima priorita'): eliminare file/doc obsoleti, zero ambiguita', docs con pattern ricorrente.
+- Rimossi file spazzatura: debug PNG (`material-orb-*.png` root, `apps/material-orb-final-candidate.png`), root `index.ts` (bun-init "Hello via Bun"), root `README.md` bun-init (riscritto reale), campo `"module": "index.ts"` da package.json root.
+- Eliminata documentazione obsoleta che contraddiceva la nuova architettura: `docs/spec/ARC_shader_native_spec.md` (vecchio spec: naming/API/roadmap superati) e `docs/process/MATERIALS_ANALYSIS.md`. La matematica shader ancora valida dell'ARC spec e' stata DISTILLATA in `docs/engineering/shader-techniques.md`.
+- docs/ ristrutturata con pattern architecture/engineering/process/references + `docs/README.md` indice. `ARCHITECTURE.md` → `docs/architecture/material-motion-skin.md`.
+- Consolidati i ref in `docs/references/`: `materials/` (screenshot target puliti di Giulio: metal/water/iridescent/fluidgradient/preview), `liquid-metal/` (Paper Design reference + ATTRIBUTION, preview con nomi puliti), `smoke-shaders.png`.
+- Aggiornati tutti i riferimenti ai path vecchi in CLAUDE.md, AGENTS.md, STACK.md, HANDOFF.md, memorie e commenti nel codice; scan orfani = pulito.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6. Nessuna regressione.
+
+## [2026-07-04] - Reference audit - Liquid orb video + screenshot comparison
+- Letti `CLAUDE.md`, `AGENTS.md`, `docs/README.md`, `docs/process/STACK.md`, `docs/process/HANDOFF.md`, `docs/architecture/material-motion-skin.md`, `docs/engineering/orb-materials.md` e `docs/engineering/shader-techniques.md`.
+- Aggiunta reference video caricata da Giulio in `docs/references/materials/liquid-orb-metal-swiftui-reference.mp4`.
+- Confrontato lo screenshot corrente di Giulio con `docs/references/materials/metal.png`, `water.png`, `iridescent.png`: target confermato come sfera sospesa con ombra morbida, bordo organico pulito, illuminazione studio e material naming v2 (`metal`/`water`/`iridescent`).
+- Analisi: lo screenshot corrente resta utile come stato intermedio, ma non soddisfa ancora le reference per artefatti neri sul bordo, assenza di ombra di contatto, chrome troppo blu/meno metallico, water troppo scuro/saturo e iridescent troppo bianco con bande solo sottili al rim.
+- Nessun codice di produzione modificato; nessuna validazione device eseguita dagli agenti.
+
+## [2026-07-04] - Pipeline audit - Video analysis tooling + R2 diagnosis
+- Installato tooling locale di sistema `ffmpeg`/`ffprobe` via Homebrew per analizzare la reference video senza aggiungere dipendenze al package.
+- Estratti metadati video: H.264, 1080×1920, 60 fps, 18.7s, 1122 frame.
+- Estratti frame e crop temporanei in `/tmp/rn-nitro-shaders-video-analysis/` per leggere motion, silhouette, shadow e differenze material; nessun derivato temporaneo aggiunto al repo.
+- Ricerca tecnica: Android `RuntimeShader`/AGSL come brush nel Canvas drawing pipeline; SwiftUI/Metal reference simili usano pipeline componibile con shader color/layer/time, non un unico mega shader accoppiato a forma e UI.
+- Diagnosi: la pipeline corrente `MaterialOrb` e' ancora legacy e accoppia material, silhouette e motion nello shader AGSL; per arrivare alla reference serve R2 con skin/orb demo nativa, ombra nativa separata, shader material puro e uniform `u_motion*`.

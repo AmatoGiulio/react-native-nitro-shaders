@@ -1,337 +1,153 @@
-#include <metal_stdlib>
-using namespace metal;
+uniform float2 u_resolution;
+uniform float u_time;
+uniform float u_speed;
+uniform float u_orbMaterial; // 0: Chrome, 1: Glass, 2: Iridescent
+uniform float u_wobble;
+uniform float u_distortion;
+uniform float u_detail;
+uniform float u_materialColor;
 
-// Liquid metal material — Metal port of paper-design/shaders (liquid-metal).
-// Ported from paper-design/shaders (liquid-metal), Apache License 2.0.
-// Changes: GLSL->MSL, image mask path removed, GPU derivatives replaced with
-// analytic approximations (parity with the AGSL port).
-//
-// Math and constants MUST stay identical to the Android/AGSL version for visual
-// parity. NO fwidth/dfdx (parity with AGSL): fixed analytic edge/stripe AA.
-//
-// Uniform layout note:
-//   Colors are stored as float4 (rgb in .xyz, .a used) so every field lands on a
-//   natural boundary with no hidden padding, keeping the Swift <-> Metal layout
-//   unambiguous. Packing (matches Swift LiquidMetalUniforms, in order):
-//     float2 resolution;   // 8 bytes
-//     float  time;
-//     float  speed;
-//     float  repetition;
-//     float  softness;
-//     float  shiftRed;
-//     float  shiftBlue;
-//     float  distortion;
-//     float  contour;
-//     float  angle;
-//     float  shape;
-//     float4 colorBack;    // 16-byte aligned
-//     float4 colorTint;
-struct LiquidMetalUniforms {
-  float2 resolution;
-  float time;
-  float speed;
-  float repetition;
-  float softness;
-  float shiftRed;
-  float shiftBlue;
-  float distortion;
-  float contour;
-  float angle;
-  float shape;
-  float4 colorBack;
-  float4 colorTint;
-};
-
-constant float LM_PI = 3.14159265358979323846;
-
-struct LiquidMetalVertexOut {
-  float4 position [[position]];
-};
-
-vertex LiquidMetalVertexOut liquidMetalVertex(uint vertexID [[vertex_id]]) {
-  float2 positions[3] = {
-    float2(-1.0, -1.0),
-    float2(3.0, -1.0),
-    float2(-1.0, 3.0)
-  };
-  LiquidMetalVertexOut out;
-  out.position = float4(positions[vertexID], 0.0, 1.0);
-  return out;
+float hash21(float2 p) {
+    p = fract(p * float2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
 }
 
-static float2 lmRotate(float2 p, float a) {
-  float c = cos(a);
-  float s = sin(a);
-  return float2(p.x * c - p.y * s, p.x * s + p.y * c);
+float noise(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i), hash21(i + float2(1.0, 0.0)), u.x),
+               mix(hash21(i + float2(0.0, 1.0)), hash21(i + float2(1.0, 1.0)), u.x), u.y);
 }
 
-static float3 lmMod289v3(float3 x) {
-  return x - floor(x * (1.0 / 289.0)) * 289.0;
+float fbm(float2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 4; i++) { 
+        v += a * noise(p); 
+        p = p * 2.0 + float2(11.5, 17.2); 
+        a *= 0.5; 
+    }
+    return v;
 }
 
-static float2 lmMod289v2(float2 x) {
-  return x - floor(x * (1.0 / 289.0)) * 289.0;
+// Studio di luce MatCap sferico (coordinate 0..1)
+float3 getMatCapEnv(float2 uvEnv) {
+    // Gradiente sferico morbido di base
+    float3 baseBg = mix(float3(0.1, 0.12, 0.15), float3(0.7, 0.75, 0.85), uvEnv.y);
+    
+    // Softbox principale in alto a sinistra (molto intenso)
+    float mainLight = smoothstep(0.45, 0.0, distance(uvEnv, float2(0.35, 0.75)));
+    // Luce di riempimento morbida in basso a destra
+    float fillLight = smoothstep(0.5, 0.0, distance(uvEnv, float2(0.7, 0.25)));
+    // Controluce (Rim) per staccare i bordi
+    float rimLight = smoothstep(0.2, 0.5, distance(uvEnv, float2(0.5, 0.5)));
+
+    float3 col = baseBg;
+    col += float3(1.4, 1.35, 1.3) * mainLight;
+    col += float3(0.3, 0.4, 0.5) * fillLight;
+    col += float3(0.4, 0.45, 0.5) * rimLight * 0.4;
+    
+    return col;
 }
 
-static float3 lmPermute(float3 x) {
-  return lmMod289v3(((x * 34.0) + 1.0) * x);
-}
+half4 main(float2 fragCoord) {
+    float2 res = max(u_resolution, float2(1.0));
+    float size = min(res.x, res.y);
+    
+    // Proporzioni centrate
+    float2 uv = (fragCoord - 0.5 * res) / (0.5 * size);
+    uv.y = -uv.y; // Flip Y per orientazione corretta delle luci[cite: 1]
 
-// Ashima 2D simplex noise (webgl-noise), ported verbatim to MSL.
-static float lmSnoise(float2 v) {
-  const float4 C = float4(0.211324865405187,   // (3.0 - sqrt(3.0)) / 6.0
-                          0.366025403784439,   // 0.5 * (sqrt(3.0) - 1.0)
-                          -0.577350269189626,  // -1.0 + 2.0 * C.x
-                          0.024390243902439);  // 1.0 / 41.0
+    float t = u_time * u_speed;
+    
+    // --- 1. DEFORMAZIONE DELLA SILHOUETTE (Bordi Fluidi come in metal.png) ---
+    float angle = atan(uv.y, uv.x);
+    float edgeNoise = fbm(float2(cos(angle), sin(angle)) * 1.2 + t * 0.4);
+    float maxRadius = 0.88 + edgeNoise * (0.15 * u_wobble * u_distortion);
+    
+    float dist = length(uv);
+    float alpha = smoothstep(maxRadius, maxRadius - 0.015, dist);
+    if (alpha <= 0.0) return half4(0.0);
 
-  float2 i = floor(v + dot(v, C.yy));
-  float2 x0 = v - i + dot(i, C.xx);
+    // Normalizziamo le coordinate interne rispetto alla silhouette fluida
+    float2 normUV = uv / maxRadius;
+    
+    // --- 2. GENERAZIONE DEL RUMORE DI FLUIDITÀ INTERNA ---
+    float2 warpUV = normUV * (mix(1.0, 2.5, u_detail)) + float2(t * 0.1, t * 0.08);
+    float n1 = fbm(warpUV);
+    float n2 = fbm(warpUV + vec2(n1 * 1.5)); // Domain warping per curve liquide reali
+    
+    // --- 3. CALCOLO GEOMETRIA 3D (Normali della Sfera) ---
+    // Applichiamo la distorsione liquida direttamente prima del calcolo della Z
+    float2 distortedUV = normUV + float2(n2 - 0.5, fbm(warpUV + 2.0) - 0.5) * (0.22 * u_distortion);
+    distortedUV = clamp(distortedUV, -0.99, 0.99); // Evita radici quadrate negative
+    
+    float z = sqrt(1.0 - dot(distortedUV, distortedUV));
+    float3 N = normalize(float3(distortedUV.x, distortedUV.y, z));
+    
+    // Vettori ottici
+    float3 V = float3(0.0, 0.0, 1.0);
+    float3 R = reflect(-V, N);
+    float NdotV = max(dot(N, V), 0.0);
+    float fresnel = pow(1.0 - NdotV, 3.5);
 
-  float2 i1 = (x0.x > x0.y) ? float2(1.0, 0.0) : float2(0.0, 1.0);
-  float4 x12 = x0.xyxy + C.xxzz;
-  x12.xy -= i1;
+    // --- 4. MAPPATURA CORRETTA MATCAP (0.0 a 1.0) ---
+    float2 matcapUV = R.xy * 0.5 + 0.5;
+    
+    // Campioniamo l'ambiente fluido distorto
+    float3 envColor = getMatCapEnv(matcapUV);
+    
+    float3 color = float3(0.0);
+    float mode = u_orbMaterial;
 
-  i = lmMod289v2(i);
-  float3 p = lmPermute(lmPermute(i.y + float3(0.0, i1.y, 1.0)) + i.x + float3(0.0, i1.x, 1.0));
-
-  float3 m = max(0.5 - float3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
-  m = m * m;
-  m = m * m;
-
-  float3 x = 2.0 * fract(p * C.www) - 1.0;
-  float3 h = abs(x) - 0.5;
-  float3 ox = floor(x + 0.5);
-  float3 a0 = x - ox;
-
-  m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
-
-  float3 g;
-  g.x = a0.x * x0.x + h.x * x0.y;
-  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
-  return 130.0 * dot(m, g);
-}
-
-static float lmGetColorChanges(float c1, float c2, float stripe_p, float3 w,
-                               float blur, float bump, float tint, float tintAlpha) {
-  float ch = mix(c2, c1, smoothstep(0.0, 2.0 * blur, stripe_p));
-
-  float border = w[0];
-  ch = mix(ch, c2, smoothstep(border, border + 2.0 * blur, stripe_p));
-
-  border = w[0] + 0.4 * (1.0 - bump) * w[1];
-  ch = mix(ch, c1, smoothstep(border, border + 2.0 * blur, stripe_p));
-
-  border = w[0] + 0.5 * (1.0 - bump) * w[1];
-  ch = mix(ch, c2, smoothstep(border, border + 2.0 * blur, stripe_p));
-
-  border = w[0] + w[1];
-  ch = mix(ch, c1, smoothstep(border, border + 2.0 * blur, stripe_p));
-
-  float gradient_t = (stripe_p - w[0] - w[1]) / w[2];
-  float gradient = mix(c1, c2, smoothstep(0.0, 1.0, gradient_t));
-  ch = mix(ch, gradient, smoothstep(border, border + 0.5 * blur, stripe_p));
-
-  // Tint color is applied with color burn blending
-  ch = mix(ch, 1.0 - min(1.0, (1.0 - ch) / max(tint, 0.0001)), tintAlpha);
-  return ch;
-}
-
-fragment float4 liquidMetalFragment(LiquidMetalVertexOut in [[stage_in]],
-                                    constant LiquidMetalUniforms& u [[buffer(0)]]) {
-  float2 fragCoord = in.position.xy;
-
-  // Analytic AA constants (parity with AGSL, no fwidth/dfdx).
-  const float edgeAA = 0.02;
-  float stripeAA = 1.5 * u.repetition / min(u.resolution.x, u.resolution.y);
-
-  const float firstFrameOffset = 2.8;
-  float t = 0.3 * (u.time * u.speed + firstFrameOffset);
-  // Loop the shared material pass while shape-local motion keeps its timing.
-  float loopTravel = 3.0;
-  float phase = fract(t / loopTravel);
-  float loopT = phase * loopTravel;
-
-  // uv = fragCoord / resolution (top-left origin == reference uv after their flip).
-  float2 uv = fragCoord / u.resolution;
-
-  float cycleWidth = u.repetition;
-  float edge = 0.0;
-  float contOffset = 1.0;
-
-  float ratio = u.resolution.x / u.resolution.y;
-
-  float2 rotatedUV = uv - float2(0.5);
-  float angle = (-u.angle + 70.0) * LM_PI / 180.0;
-  float cosA = cos(angle);
-  float sinA = sin(angle);
-  rotatedUV = float2(
-    rotatedUV.x * cosA - rotatedUV.y * sinA,
-    rotatedUV.x * sinA + rotatedUV.y * cosA
-  ) + float2(0.5);
-
-  if (u.shape < 1.0) {
-    // none — full-fill on canvas
-    float2 borderUV = uv;
-    float2 mask = min(borderUV, 1.0 - borderUV);
-    float2 pixel_thickness = min(250.0 / u.resolution, float2(0.5));
-    float maskX = smoothstep(0.0, pixel_thickness.x, mask.x);
-    float maskY = smoothstep(0.0, pixel_thickness.y, mask.y);
-    maskX = pow(maskX, 0.25);
-    maskY = pow(maskY, 0.25);
-    edge = clamp(1.0 - maskX * maskY, 0.0, 1.0);
-
-    if (ratio > 1.0) {
-      uv.y /= ratio;
+    if (mode < 0.5) {
+        // === 1. LIQUID CHROME (metal.png) ===
+        // Contrasti esasperati tramite curve di potenza, riflessi metallici argentati puri
+        float3 chrome = pow(envColor, float3(2.2)) * 2.0;
+        
+        // Specular highlight acuto
+        float spec = pow(max(R.z, 0.0), 50.0);
+        
+        color = chrome + float3(1.0) * spec * 1.5;
+        // Scurisci leggermente le parti in ombra profonda per dare contrasto liquido
+        color *= smoothstep(-0.2, 0.6, N.z);
+        
+    } else if (mode < 1.5) {
+        // === 2. LIQUID GLASS / WATER (water.png) ===
+        // Sfumature di blu profondo e azzurro liquido (Assorbimento e sss interno)
+        float3 deepColor = float3(0.02, 0.18, 0.4);
+        float3 shallowColor = float3(0.35, 0.72, 0.98);
+        
+        // L'interno reagisce al rumore di flusso n2 creando le onde interne di water.png
+        float internalFlow = smoothstep(0.1, 0.9, n2);
+        float3 glassBody = mix(deepColor, shallowColor, internalFlow * 0.7 + fresnel * 0.3);
+        
+        // Riflesso ambientale sopra lo strato vitreo
+        float3 glassReflect = pow(envColor, float3(1.2)) * (fresnel * 0.8 + 0.1);
+        float spec = pow(max(R.z, 0.0), 80.0);
+        
+        color = glassBody + glassReflect + float3(0.9, 0.95, 1.0) * spec * 1.2;
+        
     } else {
-      uv.x *= ratio;
+        // === 3. IRIDESCENT (iridescent.png) ===
+        // Struttura perlata traslucida con spettro arcobaleno guidato sia dal fresnel che dal flusso liquido
+        float3 pearlBase = float3(0.93, 0.92, 0.95) * (NdotV * 0.3 + 0.7);
+        
+        // Arcobaleno dinamico basato sull'angolo di incidenza e deformazione iridescente
+        float iridPhase = fresnel * 1.3 + n2 * 0.4 - (t * 0.05);
+        float3 rainbow = 0.5 + 0.5 * cos(6.28318 * (iridPhase + float3(0.0, 0.33, 0.67)));
+        
+        // Combina i riflessi: l'iridescenza predomina sul bordo (fresnel alto)
+        color = mix(pearlBase, rainbow, smoothstep(0.2, 0.9, fresnel));
+        
+        // Riflesso ambientale leggero e speculare finissimo (vetroso)
+        float3 glassReflect = envColor * 0.2;
+        float spec = pow(max(R.z, 0.0), 90.0);
+        
+        color += glassReflect + float3(1.0) * spec * 0.9;
     }
 
-    cycleWidth *= 2.0;
-    contOffset = 1.5;
-
-  } else if (u.shape < 2.0) {
-    // circle
-    float2 shapeUV = uv - 0.5;
-    shapeUV *= 0.67;
-    edge = pow(clamp(3.0 * length(shapeUV), 0.0, 1.0), 18.0);
-  } else if (u.shape < 3.0) {
-    // daisy
-    float2 shapeUV = uv - 0.5;
-    shapeUV *= 1.68;
-
-    float r = length(shapeUV) * 2.0;
-    float a = atan2(shapeUV.y, shapeUV.x) + 0.2;
-    r *= (1.0 + 0.05 * sin(3.0 * a + 2.0 * t));
-    float f = abs(cos(a * 3.0));
-    edge = smoothstep(f, f + 0.7, r);
-    edge *= edge;
-
-    uv *= 0.8;
-    cycleWidth *= 1.6;
-
-  } else if (u.shape < 4.0) {
-    // diamond
-    float2 shapeUV = uv - 0.5;
-    shapeUV = lmRotate(shapeUV, 0.25 * LM_PI);
-    shapeUV *= 1.42;
-    shapeUV += 0.5;
-    float2 mask = min(shapeUV, 1.0 - shapeUV);
-    float2 pixel_thickness = float2(0.15);
-    float maskX = smoothstep(0.0, pixel_thickness.x, mask.x);
-    float maskY = smoothstep(0.0, pixel_thickness.y, mask.y);
-    maskX = pow(maskX, 0.25);
-    maskY = pow(maskY, 0.25);
-    edge = clamp(1.0 - maskX * maskY, 0.0, 1.0);
-  } else if (u.shape < 5.0) {
-    // metaballs
-    float2 shapeUV = uv - 0.5;
-    shapeUV *= 1.3;
-    edge = 0.0;
-    for (int i = 0; i < 5; i++) {
-      float fi = float(i);
-      float speed = 1.5 + 2.0 / 3.0 * sin(fi * 12.345);
-      float mangle = -fi * 1.5;
-      float2 dir1 = float2(cos(mangle), sin(mangle));
-      float2 dir2 = float2(cos(mangle + 1.57), sin(mangle + 1.0));
-      float2 traj = 0.4 * (dir1 * sin(t * speed + fi * 1.23) + dir2 * cos(t * (speed * 0.7) + fi * 2.17));
-      float d = length(shapeUV + traj);
-      edge += pow(1.0 - clamp(d, 0.0, 1.0), 4.0);
-    }
-    edge = 1.0 - smoothstep(0.65, 0.9, edge);
-    edge = pow(edge, 4.0);
-  }
-
-  edge = mix(smoothstep(0.9 - edgeAA, 0.9, edge), edge, smoothstep(0.0, 0.4, u.contour));
-
-  float opacity = 1.0 - smoothstep(0.9 - edgeAA, 0.9, edge);
-  if (u.shape < 2.0) {
-    edge = 1.2 * edge;
-  } else if (u.shape < 5.0) {
-    edge = 1.8 * pow(edge, 1.5);
-  }
-
-  float diagBLtoTR = rotatedUV.x - rotatedUV.y;
-  float diagTLtoBR = rotatedUV.x + rotatedUV.y;
-
-  float3 color = float3(0.0);
-  float3 color1 = float3(0.98, 0.98, 1.0);
-  float3 color2 = float3(0.1, 0.1, 0.1 + 0.1 * smoothstep(0.7, 1.3, diagTLtoBR));
-
-  float2 grad_uv = uv - 0.5;
-
-  float dist = length(grad_uv + float2(0.0, 0.2 * diagBLtoTR));
-  grad_uv = lmRotate(grad_uv, (0.25 - 0.2 * diagBLtoTR) * LM_PI);
-  float direction = grad_uv.x;
-
-  float bump = pow(1.8 * dist, 1.2);
-  bump = 1.0 - bump;
-  bump *= pow(uv.y, 0.3);
-
-  float thin_strip_1_ratio = 0.12 / cycleWidth * (1.0 - 0.4 * bump);
-  float thin_strip_2_ratio = 0.07 / cycleWidth * (1.0 + 0.4 * bump);
-  float wide_strip_ratio = (1.0 - thin_strip_1_ratio - thin_strip_2_ratio);
-
-  float thin_strip_1_width = cycleWidth * thin_strip_1_ratio;
-  float thin_strip_2_width = cycleWidth * thin_strip_2_ratio;
-
-  float blend = smoothstep(0.85, 1.0, phase);
-  float noise = mix(lmSnoise(uv - loopT), lmSnoise(uv - loopT + loopTravel), blend);
-
-  edge += (1.0 - edge) * u.distortion * noise;
-
-  direction += diagBLtoTR;
-  float contour = 0.0;
-  direction -= 2.0 * noise * diagBLtoTR * (smoothstep(0.0, 1.0, edge) * (1.0 - smoothstep(0.0, 1.0, edge)));
-  direction *= mix(1.0, 1.0 - edge, smoothstep(0.5, 1.0, u.contour));
-  direction -= 1.7 * edge * smoothstep(0.5, 1.0, u.contour);
-  direction += 0.2 * pow(u.contour, 4.0) * (1.0 - smoothstep(0.0, 1.0, edge));
-
-  bump *= clamp(pow(uv.y, 0.1), 0.3, 1.0);
-  direction *= (0.1 + (1.1 - edge) * bump);
-
-  direction *= (0.4 + 0.6 * (1.0 - smoothstep(0.5, 1.0, edge)));
-  direction += 0.18 * (smoothstep(0.1, 0.2, uv.y) * (1.0 - smoothstep(0.2, 0.4, uv.y)));
-  direction += 0.03 * (smoothstep(0.1, 0.2, 1.0 - uv.y) * (1.0 - smoothstep(0.2, 0.4, 1.0 - uv.y)));
-
-  direction *= (0.5 + 0.5 * pow(uv.y, 2.0));
-  direction *= cycleWidth;
-  direction -= loopT;
-
-  float colorDispersion = (1.0 - bump);
-  colorDispersion = clamp(colorDispersion, 0.0, 1.0);
-  float dispersionRed = colorDispersion;
-  dispersionRed += 0.03 * bump * noise;
-  dispersionRed += 5.0 * (smoothstep(-0.1, 0.2, uv.y) * (1.0 - smoothstep(0.1, 0.5, uv.y))) * (smoothstep(0.4, 0.6, bump) * (1.0 - smoothstep(0.4, 1.0, bump)));
-  dispersionRed -= diagBLtoTR;
-
-  float dispersionBlue = colorDispersion;
-  dispersionBlue *= 1.3;
-  dispersionBlue += (smoothstep(0.0, 0.4, uv.y) * (1.0 - smoothstep(0.1, 0.8, uv.y))) * (smoothstep(0.4, 0.6, bump) * (1.0 - smoothstep(0.4, 0.8, bump)));
-  dispersionBlue -= 0.2 * edge;
-
-  dispersionRed *= (u.shiftRed / 20.0);
-  dispersionBlue *= (u.shiftBlue / 20.0);
-
-  // none image path: blur = softness/15 + .3 * contour (contour == 0 here).
-  float blur = u.softness / 15.0 + 0.3 * contour;
-
-  float3 w = float3(thin_strip_1_width, thin_strip_2_width, wide_strip_ratio);
-  w[1] -= 0.02 * smoothstep(0.0, 1.0, edge + bump);
-  float stripe_r = fract(direction + dispersionRed);
-  float r = lmGetColorChanges(color1.r, color2.r, stripe_r, w, blur + stripeAA, bump, u.colorTint.r, u.colorTint.a);
-  float stripe_g = fract(direction);
-  float g = lmGetColorChanges(color1.g, color2.g, stripe_g, w, blur + stripeAA, bump, u.colorTint.g, u.colorTint.a);
-  float stripe_b = fract(direction - dispersionBlue);
-  float b = lmGetColorChanges(color1.b, color2.b, stripe_b, w, blur + stripeAA, bump, u.colorTint.b, u.colorTint.a);
-
-  color = float3(r, g, b);
-  color *= opacity;
-
-  float3 bgColor = u.colorBack.rgb * u.colorBack.a;
-  color = color + bgColor * (1.0 - opacity);
-  opacity = opacity + u.colorBack.a * (1.0 - opacity);
-
-  color += (fract(sin(dot(fragCoord, float2(12.9898, 78.233))) * 43758.5453123) - 0.5) / 255.0;
-
-  return float4(color, opacity);
+    color = clamp(color, 0.0, 1.0);
+    return half4(half3(color), half(alpha));
 }

@@ -1,6 +1,5 @@
 {
   "name": "react-native-nitro-shaders-monorepo",
-  "module": "index.ts",
   "type": "module",
   "private": true,
   "workspaces": [

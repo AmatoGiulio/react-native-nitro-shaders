@@ -31,6 +31,14 @@ export interface NitroShadersProps extends HybridViewProps {
   wobble: number
   detail: number
   materialColor: number
+  // motion (shared across materials): 0 none, 1 flow, 2 wobble, 3 loop
+  motionType: number
+  motionSpeed: number
+  motionAmp: number
+  motionWarp: number
+  motionDetail: number
+  motionSeed: number
+  motionPeriod: number
 }
 
 export interface NitroShadersMethods extends HybridViewMethods {}
