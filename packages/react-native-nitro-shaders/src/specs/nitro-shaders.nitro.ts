@@ -9,6 +9,13 @@ export interface NitroShadersProps extends HybridViewProps {
   animated: boolean
   paused: boolean
   debugTime: number
+  shader: string
+  colors: string[]
+  speed: number
+  intensity: number
+  scale: number
+  warp: number
+  grain: number
 }
 
 export interface NitroShadersMethods extends HybridViewMethods {}

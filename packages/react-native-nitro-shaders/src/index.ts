@@ -6,3 +6,4 @@ import type {
 
 export type NitroShadersRef = HybridRef<NitroShadersProps, NitroShadersMethods>
 export { NitroShaders, ShaderSurface, type ShaderSurfaceProps } from './core/ShaderSurface'
+export { FluidGradient, type FluidGradientProps } from './effects/FluidGradient'

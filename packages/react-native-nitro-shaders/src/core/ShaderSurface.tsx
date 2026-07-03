@@ -6,12 +6,13 @@ import type {
   NitroShadersProps,
 } from '../specs/nitro-shaders.nitro'
 
-export type ShaderSurfaceProps = NitroShadersProps
-
 export const NitroShaders = getHostComponent<NitroShadersProps, NitroShadersMethods>(
   'NitroShaders',
   () => NitroShadersConfig
 )
+
+export type ShaderSurfaceProps = NitroShadersProps &
+  Pick<React.ComponentProps<typeof NitroShaders>, 'style'>
 
 export function ShaderSurface(props: ShaderSurfaceProps) {
   return <NitroShaders {...props} />

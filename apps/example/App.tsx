@@ -1,15 +1,12 @@
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View } from 'react-native';
-import { ShaderSurface } from 'react-native-nitro-shaders';
+import { FluidGradient } from 'react-native-nitro-shaders';
 
 export default function App() {
   return (
     <View style={styles.container}>
-      <ShaderSurface
-        color="#4f7cff"
-        animated={false}
-        paused={false}
-        debugTime={0}
+      <FluidGradient
+        colors={['#4f7cff', '#9b5cff', '#ff5c87']}
         style={styles.surface}
       />
       <StatusBar style="auto" />

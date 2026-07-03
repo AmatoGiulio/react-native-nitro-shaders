@@ -4,18 +4,23 @@ Snapshot dello stato corrente. Questo file viene SOVRASCRITTO ad ogni fine sessi
 non è uno storico (per quello c'è CHANGELOG.md).
 
 ## Stato attuale
-Fase: 1 - Core runtime. Android COMPLETO e verificato su emulatore. iOS implementato ma NON verificato (macchina Windows, serve build su Mac).
+Fase: 2 - FluidGradient COMPLETA e validata su Android (emulatore API 34, validazione visiva di Giulio). iOS implementato (D1+D3) ma non verificato — serve Mac.
 
 ## Completato
-- Codegen Nitrogen rigenerato sul contratto Fase 1 (`color`, `animated`, `paused`, `debugTime`); `bun run typecheck` passa.
-- Fix doppia registrazione host view: `getHostComponent('NitroShaders', ...)` era chiamato sia in `src/index.ts` sia in `src/core/ShaderSurface.tsx` → Invariant Violation al load del bundle. Ora registrato solo in `ShaderSurface.tsx`; `index.ts` ri-esporta.
-- Fix rendering Android: `canvas.drawPaint()` su canvas hardware riempiva l'intero clip del device (RN imposta clipChildren=false) → shader fullscreen invece dei bounds della view. Sostituito con `canvas.drawRect(0,0,width,height,...)` sia per path AGSL sia per fallback <API 33.
-- Verificato su emulatore Pixel 6a (API 34): quadrato 220×220 colore solido via RuntimeShader, centrato, driven da JS (cambio colore da App.tsx riflesso dopo reload).
+- Contratto Nitro Fase 2: `shader`, `colors[]`, `speed`, `intensity`, `scale`, `warp`, `grain` + prop Fase 1; codegen rigenerato, typecheck verde.
+- `FluidGradient` componente pubblico (`src/effects/`), default in `src/materials/fluid.ts`.
+- Android: `fluid-gradient.agsl` da assets (fBm 4 ottave + domain warp + palette branchless a indici costanti + dithering), selezione material per nome, fallback LinearGradient statico <API 33.
+- iOS: `fluid-gradient.metal` + selezione/pipeline cache in `HybridNitroShaders.swift` (fragment compilato da stringa inline, .metal è la fonte di riferimento).
+
+## Debito tecnico dichiarato (da azzerare, Giulio non vuole debito)
+1. iOS: sorgente shader duplicato (stringa inline autoritativa vs file `fluid-gradient.metal`) — si risolve col wiring podspec/Xcode della default library, SOLO su Mac.
+2. Android: `shared-surface.agsl` negli assets è inutilizzato (il material solid usa la costante inline `SHADER_SOURCE`) — unificare: o si carica anche il solid da assets o si elimina l'asset stale.
+3. Rename `packages/react-native-nitro-shaders` → `packages/nitro-shaders` (preferenza espressa, mai eseguito).
 
 ## Prossimo task pianificato
-- Verifica iOS su Mac: build apps/example, confermare che `HybridNitroShaders.swift` (MTKView) renderizzi il quadrato colore solido rispettando i bounds → chiude la Definition of Done di Fase 1.
-- Dopo DoD verificata su entrambe le piattaforme: avvio Fase 2 (FluidGradient).
+- Bonifica debito 2 (task worker, meccanico).
+- Su Mac: validazione iOS Fase 1+2 e debito 1.
+- Poi Fase 3 — LiquidChrome: reference visiva in `docs/refs/smoke-shaders.png` (swoosh black chrome liquido: height field + normal map + chrome bands, variante blackChrome; prospettiva futura: maschera su shape/logo arbitraria — da decidere se rientra nel material o nella famiglia text/mask).
 
 ## Blocchi aperti
-- BLOCKED (Giulio): validazione iOS non eseguibile da questa macchina (Windows). Serve run su Mac.
-- Rename `packages/react-native-nitro-shaders` → `packages/nitro-shaders` ancora non eseguito (preferenza espressa, non prioritaria).
+- BLOCKED (Giulio): build+validazione iOS su Mac (Fase 1 e 2).
