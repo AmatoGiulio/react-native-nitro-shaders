@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View } from 'react-native';
-import { FluidGradient } from 'react-native-nitro-shaders';
+import { FluidGradient, LiquidChrome } from 'react-native-nitro-shaders';
 
 export default function App() {
   return (
@@ -9,6 +9,7 @@ export default function App() {
         colors={['#4f7cff', '#9b5cff', '#ff5c87']}
         style={styles.surface}
       />
+      <LiquidChrome variant="silver" style={{ width: 220, height: 220, marginTop: 24 }} />
       <StatusBar style="auto" />
     </View>
   );

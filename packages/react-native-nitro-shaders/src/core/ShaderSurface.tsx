@@ -11,9 +11,13 @@ export const NitroShaders = getHostComponent<NitroShadersProps, NitroShadersMeth
   () => NitroShadersConfig
 )
 
-export type ShaderSurfaceProps = NitroShadersProps &
+// Material defaults live on the native side; each effect passes only its own
+// uniforms. `shader` stays required because it selects the material.
+export type ShaderSurfaceProps = Partial<NitroShadersProps> &
+  Pick<NitroShadersProps, 'shader'> &
   Pick<React.ComponentProps<typeof NitroShaders>, 'style'>
 
 export function ShaderSurface(props: ShaderSurfaceProps) {
-  return <NitroShaders {...props} />
+  // Omitted props fall back to the native-side defaults.
+  return <NitroShaders {...(props as React.ComponentProps<typeof NitroShaders>)} />
 }

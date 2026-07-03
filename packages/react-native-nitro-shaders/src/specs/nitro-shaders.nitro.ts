@@ -16,6 +16,12 @@ export interface NitroShadersProps extends HybridViewProps {
   scale: number
   warp: number
   grain: number
+  variant: string
+  flow: number
+  distortion: number
+  contrast: number
+  highlightWidth: number
+  highlightIntensity: number
 }
 
 export interface NitroShadersMethods extends HybridViewMethods {}

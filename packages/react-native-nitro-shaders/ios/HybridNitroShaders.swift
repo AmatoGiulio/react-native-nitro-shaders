@@ -32,6 +32,69 @@ class HybridNitroShaders : HybridNitroShadersSpec, MTKViewDelegate {
        SIMD4<Float>(0, 0, 0, 1), SIMD4<Float>(0, 0, 0, 1), SIMD4<Float>(0, 0, 0, 1))
   }
 
+  // Layout MUST match LiquidChromeUniforms in liquid-chrome.metal (float4 per color).
+  private struct LiquidChromeUniforms {
+    var resolution: SIMD2<Float> = SIMD2<Float>(1, 1)
+    var time: Float = 0
+    var speed: Float = 1
+    var scale: Float = 1
+    var flow: Float = 0.35
+    var distortion: Float = 1.2
+    var contrast: Float = 1.4
+    var highlightPower: Float = 6.15
+    var highlightIntensity: Float = 1.1
+    var grain: Float = 0
+    var iridescence: Float = 0
+    var baseDark: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 1)
+    var baseLight: SIMD4<Float> = SIMD4<Float>(1, 1, 1, 1)
+    var highlightColor: SIMD4<Float> = SIMD4<Float>(1, 1, 1, 1)
+    var edgeTint: SIMD4<Float> = SIMD4<Float>(1, 1, 1, 1)
+  }
+
+  // CPU-side resolution of a liquidChrome variant. Table MUST stay identical to
+  // the Android/AGSL counterpart for visual parity.
+  private struct LiquidChromeVariant {
+    var baseDark: SIMD4<Float>
+    var baseLight: SIMD4<Float>
+    var highlight: SIMD4<Float>
+    var edgeTint: SIMD4<Float>
+    var iridescence: Float
+    var highlightPowerFactor: Float
+  }
+
+  private static func liquidChromeVariant(_ name: String) -> LiquidChromeVariant {
+    switch name {
+    case "mercury":
+      return LiquidChromeVariant(
+        baseDark: SIMD4<Float>(0.02, 0.03, 0.05, 1),
+        baseLight: SIMD4<Float>(0.85, 0.90, 0.98, 1),
+        highlight: SIMD4<Float>(0.98, 0.99, 1.0, 1),
+        edgeTint: SIMD4<Float>(0.65, 0.75, 0.95, 1),
+        iridescence: 0.0, highlightPowerFactor: 1.0)
+    case "blackChrome":
+      return LiquidChromeVariant(
+        baseDark: SIMD4<Float>(0.01, 0.01, 0.012, 1),
+        baseLight: SIMD4<Float>(0.35, 0.36, 0.38, 1),
+        highlight: SIMD4<Float>(0.85, 0.87, 0.90, 1),
+        edgeTint: SIMD4<Float>(0.25, 0.26, 0.30, 1),
+        iridescence: 0.0, highlightPowerFactor: 2.0)
+    case "rainbowOil":
+      return LiquidChromeVariant(
+        baseDark: SIMD4<Float>(0.05, 0.05, 0.06, 1),
+        baseLight: SIMD4<Float>(0.90, 0.90, 0.94, 1),
+        highlight: SIMD4<Float>(1.0, 1.0, 1.0, 1),
+        edgeTint: SIMD4<Float>(0.80, 0.84, 0.90, 1),
+        iridescence: 0.12, highlightPowerFactor: 1.0)
+    default: // silver (also unknown fallback)
+      return LiquidChromeVariant(
+        baseDark: SIMD4<Float>(0.05, 0.05, 0.06, 1),
+        baseLight: SIMD4<Float>(0.95, 0.95, 0.97, 1),
+        highlight: SIMD4<Float>(1.0, 1.0, 1.0, 1),
+        edgeTint: SIMD4<Float>(0.85, 0.88, 0.92, 1),
+        iridescence: 0.0, highlightPowerFactor: 1.0)
+    }
+  }
+
   private let metalView: MTKView
   private let device: MTLDevice?
   private let commandQueue: MTLCommandQueue?
@@ -118,6 +181,42 @@ class HybridNitroShaders : HybridNitroShadersSpec, MTKViewDelegate {
     }
   }
 
+  var variant: String = "silver" {
+    didSet {
+      drawIfNeeded()
+    }
+  }
+
+  var flow: Double = 0.35 {
+    didSet {
+      drawIfNeeded()
+    }
+  }
+
+  var distortion: Double = 1.2 {
+    didSet {
+      drawIfNeeded()
+    }
+  }
+
+  var contrast: Double = 1.4 {
+    didSet {
+      drawIfNeeded()
+    }
+  }
+
+  var highlightWidth: Double = 0.65 {
+    didSet {
+      drawIfNeeded()
+    }
+  }
+
+  var highlightIntensity: Double = 1.1 {
+    didSet {
+      drawIfNeeded()
+    }
+  }
+
   override init() {
     let metalDevice = MTLCreateSystemDefaultDevice()
     device = metalDevice
@@ -172,6 +271,30 @@ class HybridNitroShaders : HybridNitroShadersSpec, MTKViewDelegate {
       encoder?.setRenderPipelineState(pipelineState)
       encoder?.setFragmentBytes(&uniforms, length: MemoryLayout<FluidUniforms>.stride, index: 0)
       encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+    } else if shader == "liquidChrome", let pipelineState = pipelineState(for: "liquidChrome") {
+      let v = Self.liquidChromeVariant(variant)
+      var uniforms = LiquidChromeUniforms()
+      uniforms.resolution = SIMD2<Float>(
+        Float(max(view.drawableSize.width, 1)),
+        Float(max(view.drawableSize.height, 1))
+      )
+      uniforms.time = time
+      uniforms.speed = Float(speed)
+      uniforms.scale = Float(scale)
+      uniforms.flow = Float(flow)
+      uniforms.distortion = Float(distortion)
+      uniforms.contrast = Float(contrast)
+      uniforms.highlightPower = (4.0 / max(Float(highlightWidth), 0.05)) * v.highlightPowerFactor
+      uniforms.highlightIntensity = Float(highlightIntensity)
+      uniforms.grain = Float(grain)
+      uniforms.iridescence = v.iridescence
+      uniforms.baseDark = v.baseDark
+      uniforms.baseLight = v.baseLight
+      uniforms.highlightColor = v.highlight
+      uniforms.edgeTint = v.edgeTint
+      encoder?.setRenderPipelineState(pipelineState)
+      encoder?.setFragmentBytes(&uniforms, length: MemoryLayout<LiquidChromeUniforms>.stride, index: 0)
+      encoder?.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
     } else if let pipelineState = pipelineState(for: "solid") {
       var uniforms = Uniforms(color: parseColor(color), time: time)
       encoder?.setRenderPipelineState(pipelineState)
@@ -209,6 +332,9 @@ class HybridNitroShaders : HybridNitroShadersSpec, MTKViewDelegate {
     case "fluidGradient":
       vertexName = "fluidVertex"
       fragmentName = "fluidFragment"
+    case "liquidChrome":
+      vertexName = "liquidChromeVertex"
+      fragmentName = "liquidChromeFragment"
     default:
       vertexName = "vertexMain"
       fragmentName = "fragmentMain"
@@ -382,6 +508,104 @@ class HybridNitroShaders : HybridNitroShadersSpec, MTKViewDelegate {
 
     float3 rgb = fluidPalette(v, u);
     rgb += (fluidHash21(fragCoord) - 0.5) * u.grain * 0.08;
+
+    return float4(rgb, 1.0);
+  }
+
+  // ---- liquidChrome material ----
+  // Source of truth: ios/Shaders/liquid-chrome.metal (kept in sync).
+  // Finite differences (NOT dFdx/dFdy) for parity with the AGSL counterpart.
+  struct LiquidChromeUniforms {
+    float2 resolution;
+    float time;
+    float speed;
+    float scale;
+    float flow;
+    float distortion;
+    float contrast;
+    float highlightPower;
+    float highlightIntensity;
+    float grain;
+    float iridescence;
+    float4 baseDark;
+    float4 baseLight;
+    float4 highlightColor;
+    float4 edgeTint;
+  };
+
+  vertex VertexOut liquidChromeVertex(uint vertexID [[vertex_id]]) {
+    float2 positions[3] = {
+      float2(-1.0, -1.0),
+      float2(3.0, -1.0),
+      float2(-1.0, 3.0)
+    };
+    VertexOut out;
+    out.position = float4(positions[vertexID], 0.0, 1.0);
+    return out;
+  }
+
+  static float chromeHash21(float2 p) {
+    p = fract(p * float2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+
+  static float chromeValueNoise(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float a = chromeHash21(i);
+    float b = chromeHash21(i + float2(1.0, 0.0));
+    float c = chromeHash21(i + float2(0.0, 1.0));
+    float d = chromeHash21(i + float2(1.0, 1.0));
+    float2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
+
+  static float chromeFbm(float2 p) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    for (int i = 0; i < 4; i++) {
+      value += amplitude * chromeValueNoise(p);
+      p *= 2.0;
+      amplitude *= 0.5;
+    }
+    return value;
+  }
+
+  static float heightAt(float2 p, float t, float flow) {
+    float h1 = chromeFbm(p + t * float2(0.30, 0.24) * flow);
+    float h2 = chromeFbm(p * 1.7 + float2(h1, h1) + t * float2(-0.20, 0.34) * flow);
+    return h1 * 0.55 + h2 * 0.45;
+  }
+
+  fragment float4 liquidChromeFragment(VertexOut in [[stage_in]],
+                                       constant LiquidChromeUniforms& u [[buffer(0)]]) {
+    float2 fragCoord = in.position.xy;
+    float2 uv = fragCoord / u.resolution;
+    float t = u.time * u.speed;
+    float2 p = uv * u.scale;
+
+    float eps = 1.0 / min(u.resolution.x, u.resolution.y) * u.scale;
+    float hx = heightAt(p + float2(eps, 0.0), t, u.flow) - heightAt(p - float2(eps, 0.0), t, u.flow);
+    float hy = heightAt(p + float2(0.0, eps), t, u.flow) - heightAt(p - float2(0.0, eps), t, u.flow);
+    float3 normal = normalize(float3(-hx * u.distortion, -hy * u.distortion, 0.35));
+
+    float2 reflection = normal.xy * 0.5 + 0.5;
+    float bands = 0.45 * sin(reflection.y * 18.0 + normal.x * 5.0)
+                + 0.35 * sin(reflection.x * 12.0 + t * 0.35)
+                + 0.20 * sin((reflection.x + reflection.y) * 22.0);
+    float chrome = smoothstep(0.25, 0.95, bands);
+    float fresnel = pow(1.0 - max(dot(normal, float3(0.0, 0.0, 1.0)), 0.0), 3.0);
+
+    float3 rgb = mix(u.baseDark.xyz, u.baseLight.xyz, chrome);
+    rgb += u.highlightColor.xyz * pow(chrome, u.highlightPower) * u.highlightIntensity;
+    rgb += u.edgeTint.xyz * fresnel;
+
+    float ph = (reflection.x + reflection.y) * 6.2831853;
+    rgb += float3(sin(ph), sin(ph + 2.0944), sin(ph + 4.1888)) * u.iridescence;
+
+    rgb = clamp((rgb - 0.5) * u.contrast + 0.5, 0.0, 1.0);
+    rgb += (chromeHash21(fragCoord) - 0.5) * u.grain * 0.08;
 
     return float4(rgb, 1.0);
   }
