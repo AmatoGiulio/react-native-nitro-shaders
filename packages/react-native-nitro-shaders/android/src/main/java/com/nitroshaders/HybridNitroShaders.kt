@@ -185,7 +185,6 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
     private val fluidPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val appContext = context.applicationContext
-    private var runtimeShader: RuntimeShader? = null
     private var parsedColor = Color.BLACK
     private var parsedColors: FloatArray = FloatArray(0)
     private var frameCallbackPosted = false
@@ -194,12 +193,9 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
     private var fluidShaderInit = false
     private var fluidRuntimeShader: RuntimeShader? = null
 
-    init {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            runtimeShader = RuntimeShader(SHADER_SOURCE)
-            paint.shader = runtimeShader
-        }
-    }
+    private var solidShaderInit = false
+    private var solidRuntimeShader: RuntimeShader? = null
+
 
     private fun fluidShader(): RuntimeShader? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
@@ -212,6 +208,19 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
             fluidRuntimeShader = RuntimeShader(source).also { fluidPaint.shader = it }
         }
         return fluidRuntimeShader
+    }
+
+    private fun solidShader(): RuntimeShader? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return null
+        }
+        if (!solidShaderInit) {
+            solidShaderInit = true
+            val source = appContext.assets.open("shaders/shared-surface.agsl")
+                .bufferedReader().use { it.readText() }
+            solidRuntimeShader = RuntimeShader(source).also { paint.shader = it }
+        }
+        return solidRuntimeShader
     }
 
     override fun onAttachedToWindow() {
@@ -240,7 +249,7 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
                     return
                 }
             } else {
-                val shader = runtimeShader
+                val shader = solidShader()
                 if (shader != null) {
                     shader.setFloatUniform("u_color", red(), green(), blue(), alpha())
                     shader.setFloatUniform("u_time", currentTimeSeconds())
@@ -361,14 +370,4 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
     private fun blue(): Float = Color.blue(parsedColor) / 255f
     private fun alpha(): Float = Color.alpha(parsedColor) / 255f
 
-    companion object {
-        private const val SHADER_SOURCE = """
-            uniform vec4 u_color;
-            uniform float u_time;
-
-            half4 main(float2 coord) {
-              return half4(u_color);
-            }
-        """
-    }
 }
