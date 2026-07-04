@@ -106,3 +106,11 @@ Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a f
 - `MaterialOrb.tsx` ora passa anche `motionType`, `motionSpeed`, `motionAmp`, `motionWarp`, `motionDetail`, `motionSeed`, `motionPeriod`; i preset legacy restano supportati per la demo.
 - Preset orb allineati ai valori visibili nella reference video per water/iridescent e a un chrome piu' neutro.
 - Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` verde. Nessuna validazione visuale device eseguita dagli agenti.
+
+## [2026-07-04] - R2 visual tuning - Orb reference pass 2
+- Ricevuto screenshot Giulio post split: miglioramento strutturale confermato, ma target ancora lontano.
+- Corretto disallineamento principale tra Path nativo e shader: l'orb Path era centrato sopra al centro shader, causando rim/highlight fuori scala e bordo verde spesso su `iridescent`.
+- Ridotto wobble nativo di default e avvicinata l'ombra alla reference con ellisse piu' larga e meno alta.
+- Tuning AGSL: normal bump meno aggressivo; chrome meno nero/bruciato e piu' neutro; water piu' lattiginoso con rim/corpo gel; iridescent con thin-film meno saturo e highlight meno bruciati.
+- Preset `liquidChrome` e `iridescentGlass` ridotti in wobble/distortion per evitare look planetario e bordo troppo spesso.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` verde. AGSL resta da validare visualmente su device da Giulio.

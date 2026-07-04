@@ -666,11 +666,11 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
         val size = min(w, h)
         val radius = size * 0.405f
         val cx = w * 0.5f
-        val cy = h * 0.455f
+        val cy = h * 0.5f
         val wobbleAmount = resolvedMotionAmp().coerceIn(0f, 1.4f)
         val warpAmount = resolvedMotionWarp().coerceIn(0f, 1.4f)
         val speedAmount = resolvedMotionSpeed().coerceAtLeast(0.05f)
-        val edgeAmp = (0.018f + 0.036f * wobbleAmount + 0.018f * warpAmount) * radius
+        val edgeAmp = (0.012f + 0.024f * wobbleAmount + 0.012f * warpAmount) * radius
         val phase = time * speedAmount
         val points = 80
 
@@ -697,11 +697,11 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
         val size = min(w, h)
         val radius = size * 0.405f
         val cx = w * 0.5f
-        val cy = h * 0.455f
+        val cy = h * 0.5f
         val shadowCx = cx
-        val shadowCy = cy + radius * 0.92f
-        val shadowRx = radius * 0.68f
-        val shadowRy = radius * 0.16f
+        val shadowCy = cy + radius * 0.84f
+        val shadowRx = radius * 0.74f
+        val shadowRy = radius * 0.13f
         val strength = when {
             orbMaterial < 0.5 -> 54
             orbMaterial < 1.5 -> 36

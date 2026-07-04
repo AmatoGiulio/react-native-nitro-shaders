@@ -38,6 +38,17 @@ prima tranche R2 visual pipeline su Android:
   risolte accanto ai vecchi uniform per compatibilita' demo.
 - Verifiche: `bun run typecheck`, `bun test`, `./gradlew :app:assembleDebug`.
 
+Iterazione visuale successiva su screenshot Giulio `Screenshot_1783152407.png`:
+- Confermato che lo split Path/shader avvicina il target ma lo shading era ancora
+  lontano: chrome troppo scuro/bruciato, water troppo piatto, iridescent con
+  bordo verde troppo spesso.
+- Fix implementato: centro Path nativo riallineato al centro shader (`cy = h*0.5`)
+  per evitare campionamento rim scorretto.
+- Ridotti wobble/distortion nativi e ammorbidita shadow.
+- Tuning `material-orb.agsl`: bump meno aggressivo, env chrome meno contrastato,
+  water piu' lattiginoso/gel, iridescent piu' perla e meno anello saturo.
+- Verifiche passate: `bun run typecheck`, `bun test`, `./gradlew :app:assembleDebug`.
+
 ## Architettura decisa (Giulio, 2026-07-03)
 - **Material** (5, piatti): `fluidGradient`, `liquidMetal`, `metal`, `water`,
   `iridescent`. Lo shader calcola solo il colore, mai la forma.
