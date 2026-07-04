@@ -49,6 +49,17 @@ Iterazione visuale successiva su screenshot Giulio `Screenshot_1783152407.png`:
   water piu' lattiginoso/gel, iridescent piu' perla e meno anello saturo.
 - Verifiche passate: `bun run typecheck`, `bun test`, `./gradlew :app:assembleDebug`.
 
+Iterazione visuale successiva su screenshot Giulio `Screenshot_1783152612.png`:
+- Problema diagnosticato: il render resta troppo 2D perche' il noise viene letto
+  come texture/ombra, non come pelle tridimensionale che riflette un ambiente.
+- Fix implementato in AGSL: membrane normal derivata da height field + onde
+  acustiche; environment reflection procedurale con softbox, ribbon e pannelli
+  scuri/chiari; riflessioni applicate a tutti e tre i material.
+- Densita' material introdotta nel modello visuale: metal piu' rigido/speculare,
+  water piu' morbido/caustico, iridescent intermedio/perlaceo.
+- Fix Kotlin Path: deformazione bordo dipende dalla densita' del material.
+- Verifiche passate: `bun run typecheck`, `bun test`, `./gradlew :app:assembleDebug`.
+
 ## Architettura decisa (Giulio, 2026-07-03)
 - **Material** (5, piatti): `fluidGradient`, `liquidMetal`, `metal`, `water`,
   `iridescent`. Lo shader calcola solo il colore, mai la forma.

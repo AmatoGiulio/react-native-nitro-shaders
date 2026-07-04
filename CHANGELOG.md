@@ -114,3 +114,11 @@ Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a f
 - Tuning AGSL: normal bump meno aggressivo; chrome meno nero/bruciato e piu' neutro; water piu' lattiginoso con rim/corpo gel; iridescent con thin-film meno saturo e highlight meno bruciati.
 - Preset `liquidChrome` e `iridescentGlass` ridotti in wobble/distortion per evitare look planetario e bordo troppo spesso.
 - Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` verde. AGSL resta da validare visualmente su device da Giulio.
+
+## [2026-07-04] - R2 visual tuning - Reflection/membrane pass
+- Ricevuto screenshot Giulio: ancora poca tridimensionalita' e assenza di riflessioni percepibili sui tre material.
+- `material-orb.agsl`: sostituito il modello "noise come colore" con membrane normal + environment reflection procedurale.
+- Aggiunti pannelli/softbox/ribbon riflessi (`studioEnv`) e perturbazione da onde acustiche (`acousticWave`) per simulare bolla viva senza gravita'.
+- Introdotta densita' per material: `metal` piu' denso/rigido e speculare, `water` piu' morbido/caustico, `iridescent` intermedio/perlaceo.
+- Kotlin Path: edge wobble ora usa la densita' del material, cosi' la skin non si muove uguale per tutti.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` verde. Validazione visuale runtime resta a Giulio.
