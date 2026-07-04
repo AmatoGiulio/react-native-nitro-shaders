@@ -17,16 +17,18 @@ appartiene a più sezioni, vive in una sola ed è linkata dalle altre.
 
 ### engineering
 - [shader-techniques.md](engineering/shader-techniques.md) — matematica shader (noise/fBm, superficie metallica), AGSL vs Metal, masking skin, runtime rules.
-- [orb-materials.md](engineering/orb-materials.md) — EDD autoritativo dei tre material orb (`metal`/`water`/`iridescent`): pipeline ottiche, pseudocodice, milestone e DoD.
+- [orb-materials.md](engineering/orb-materials.md) — engine dei tre material orb (`metal`/`water`/`iridescent`): mini-PBR + IBL (riflette un HDRI di studio reale), superficie 3D viva, preset PBR.
 
 ### process
 - [STACK.md](process/STACK.md) — stack, struttura repo, convenzioni, roadmap.
 - [HANDOFF.md](process/HANDOFF.md) — snapshot dello stato corrente (sovrascritto ogni sessione).
+- [ORB_MATERIALS_JOURNEY.md](process/ORB_MATERIALS_JOURNEY.md) — il percorso agli orb: tentativi falliti, la diagnosi e cosa ha fatto il salto (IBL + noise 3D).
 
 ### references
 - [materials/](references/materials/) — screenshot/video target per material (`metal`, `water`, `iridescent`, `fluidgradient`, overview, liquid orb motion).
 - [liquid-metal/](references/liquid-metal/) — reference Paper Design + `ATTRIBUTION.md` (Apache 2.0).
 - [smoke-shaders.png](references/smoke-shaders.png) — reference chrome/smoke standalone.
+- [ASSET-LICENSES.md](references/ASSET-LICENSES.md) — provenienza e licenze degli asset di terzi (es. HDRI studio CC0).
 
 ## Fuori da docs/ (radice repo)
 - [CLAUDE.md](../CLAUDE.md) — regole vincolanti per gli agenti e gerarchia decisionale.

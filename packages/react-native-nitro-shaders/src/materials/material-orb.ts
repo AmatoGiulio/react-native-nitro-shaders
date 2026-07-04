@@ -1,24 +1,13 @@
-export const MATERIAL_ORB_DEFAULTS = {
-  orbMaterial: 0,
-  materialName: 'metal',
-  speed: 1,
-  wobble: 1,
-  distortion: 0.77,
-  detail: 1,
-  materialColor: 0.5,
-}
+// Public orb material names. These match the target architecture (MaterialName);
+// mode index maps to u_orbMaterial in material-orb.agsl.
+export type MaterialOrbMaterial = 'metal' | 'water' | 'iridescent'
 
-export type MaterialOrbMaterial =
-  | 'liquidChrome'
-  | 'liquidGlass'
-  | 'iridescentGlass'
-
-// Default per material osservati dalle reference (docs/references/materials/).
+// Per-material parameter presets, observed from the references
+// (docs/references/materials/ + the @jc_builds reference video).
 export const MATERIAL_ORB_PRESETS: Record<
   MaterialOrbMaterial,
   {
     orbMaterial: number
-    materialName: 'metal' | 'water' | 'iridescent'
     speed: number
     wobble: number
     distortion: number
@@ -26,27 +15,24 @@ export const MATERIAL_ORB_PRESETS: Record<
     materialColor: number
   }
 > = {
-  liquidChrome: {
+  metal: {
     orbMaterial: 0,
-    materialName: 'metal',
     speed: 0.9,
     wobble: 0.72,
     distortion: 0.56,
     detail: 1,
     materialColor: 0.42,
   },
-  liquidGlass: {
+  water: {
     orbMaterial: 1,
-    materialName: 'water',
     speed: 1.39,
     wobble: 0.6,
     distortion: 0.55,
     detail: 1.43,
     materialColor: 0.55,
   },
-  iridescentGlass: {
+  iridescent: {
     orbMaterial: 2,
-    materialName: 'iridescent',
     speed: 0.9,
     wobble: 0.34,
     distortion: 0.28,

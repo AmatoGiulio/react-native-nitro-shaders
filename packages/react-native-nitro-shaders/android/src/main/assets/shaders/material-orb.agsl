@@ -1,7 +1,18 @@
+// ==========================================
+// material-orb.agsl — mini-PBR with IBL on a living 3D sphere
+// The surface relief is sampled with 3D noise ON THE SPHERE and rotated over time
+// on all axes → it reads as a real 3D orb whose skin is pushed from the inside and
+// orbits in every direction. The material reflects/refracts a real studio HDRI.
+// Silhouette + contact shadow are drawn natively by the Skin.
+// ==========================================
+
+uniform shader u_env;       // equirectangular studio environment (BitmapShader)
+uniform float2 u_envSize;   // env bitmap size in pixels
+
 uniform float2 u_resolution;
 uniform float u_time;
 uniform float u_speed;
-uniform float u_orbMaterial; // 0: metal, 1: water, 2: iridescent
+uniform float u_orbMaterial; // 0: metal, 1: water/glass, 2: iridescent
 uniform float u_wobble;
 uniform float u_distortion;
 uniform float u_detail;
@@ -15,9 +26,7 @@ uniform float u_motionDetail;
 uniform float u_motionSeed;
 uniform float u_motionPeriod;
 
-float orbSaturate(float v) {
-    return clamp(v, 0.0, 1.0);
-}
+float sat(float v) { return clamp(v, 0.0, 1.0); }
 
 float hash21(float2 p) {
     p = fract(p * float2(123.34, 456.21));
@@ -25,203 +34,164 @@ float hash21(float2 p) {
     return fract(p.x * p.y);
 }
 
-float noise(float2 p) {
-    float2 i = floor(p);
-    float2 f = fract(p);
-    float2 u = f * f * (3.0 - 2.0 * f);
-    return mix(
-        mix(hash21(i), hash21(i + float2(1.0, 0.0)), u.x),
-        mix(hash21(i + float2(0.0, 1.0)), hash21(i + float2(1.0, 1.0)), u.x),
-        u.y
-    );
+// --- 3D value noise ---
+float hash13(float3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.zyx + 31.32);
+    return fract((p.x + p.y) * p.z);
 }
 
-float fbm(float2 p) {
-    float v = 0.0;
-    float a = 0.5;
-    for (int i = 0; i < 4; i++) {
-        v += a * noise(p);
-        p = p * 2.03 + float2(11.5, 17.2);
-        a *= 0.5;
-    }
+float noise3(float3 x) {
+    float3 i = floor(x);
+    float3 f = fract(x);
+    f = f * f * (3.0 - 2.0 * f);
+    float n000 = hash13(i + float3(0.0, 0.0, 0.0));
+    float n100 = hash13(i + float3(1.0, 0.0, 0.0));
+    float n010 = hash13(i + float3(0.0, 1.0, 0.0));
+    float n110 = hash13(i + float3(1.0, 1.0, 0.0));
+    float n001 = hash13(i + float3(0.0, 0.0, 1.0));
+    float n101 = hash13(i + float3(1.0, 0.0, 1.0));
+    float n011 = hash13(i + float3(0.0, 1.0, 1.0));
+    float n111 = hash13(i + float3(1.0, 1.0, 1.0));
+    float nx00 = mix(n000, n100, f.x);
+    float nx10 = mix(n010, n110, f.x);
+    float nx01 = mix(n001, n101, f.x);
+    float nx11 = mix(n011, n111, f.x);
+    return mix(mix(nx00, nx10, f.y), mix(nx01, nx11, f.y), f.z);
+}
+
+float fbm3(float3 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 3; i++) { v += a * noise3(p); p = p * 1.92 + 7.3; a *= 0.5; }
     return v;
 }
 
-float resolvedSpeed() {
-    return max(u_motionSpeed, u_speed);
+float resolved(float motion, float legacy) { return max(motion, legacy); }
+
+// Rotate a vector around Y (ay) then X (ax) — orbit on horizontal + vertical axes.
+float3 rotate3(float3 v, float ax, float ay) {
+    float cy = cos(ay), sy = sin(ay);
+    v = float3(v.x * cy + v.z * sy, v.y, -v.x * sy + v.z * cy);
+    float cx = cos(ax), sx = sin(ax);
+    v = float3(v.x, v.y * cx - v.z * sx, v.y * sx + v.z * cx);
+    return v;
 }
 
-float resolvedAmp() {
-    return max(u_motionAmp, u_wobble);
+float3 sampleEnv(float3 dir) {
+    dir = normalize(dir);
+    float u = atan(dir.z, dir.x) * 0.1591549 + 0.5;
+    float v = acos(clamp(dir.y, -1.0, 1.0)) * 0.3183099;
+    float2 px = float2(fract(u) * u_envSize.x, clamp(v, 0.0, 1.0) * u_envSize.y);
+    return float3(u_env.eval(px).rgb);
 }
 
-float resolvedWarp() {
-    return max(u_motionWarp, u_distortion);
+float3 sampleEnvSoft(float3 dir, float rough) {
+    float3 t = normalize(cross(float3(0.0, 1.0, 0.0), dir) + float3(0.001));
+    float3 bt = cross(dir, t);
+    float k = rough * 0.35;
+    float3 c = sampleEnv(dir);
+    c += sampleEnv(dir + t * k);
+    c += sampleEnv(dir - t * k);
+    c += sampleEnv(dir + bt * k);
+    c += sampleEnv(dir - bt * k);
+    return c / 5.0;
 }
 
-float resolvedDetail() {
-    return max(u_motionDetail, u_detail);
+// Large, soft 3D folds on the sphere surface (low frequency).
+float relief3(float3 sp, float detail) {
+    float scale = mix(1.1, 2.4, sat(detail * 0.5));
+    float3 q = sp * scale;
+    float w = fbm3(q * 0.6);
+    return fbm3(q + (w - 0.5) * 1.1);
 }
 
-float heightField(float2 p, float t, float detail) {
-    float scale = mix(1.45, 3.35, orbSaturate(detail * 0.55));
-    float2 flow = float2(t * 0.10, -t * 0.075);
-    float n = fbm(p * scale + flow + u_motionSeed);
-    float2 warp = float2(
-        fbm(p * 1.25 + float2(n * 1.7, t * 0.06)),
-        fbm(p * 1.25 + float2(4.2, n * 1.4 - t * 0.05))
-    );
-    return fbm(p * scale + (warp - 0.5) * 1.65 + flow);
+// Relief sampled in a domain that rotates over time → the skin orbits on all axes.
+float reliefRot(float3 viewPos, float t, float detail) {
+    float3 sp = rotate3(viewPos, t * 0.30 + u_motionSeed, t * 0.42);
+    return relief3(sp, detail);
 }
 
-float acousticWave(float2 p, float t, float density) {
-    float radius = length(p);
-    float angle = atan(p.y, p.x);
-    float low = sin(radius * mix(9.0, 15.0, density) - t * mix(1.2, 0.55, density));
-    float mid = sin(angle * 3.0 + radius * 7.0 + t * 0.7);
-    float high = sin((p.x - p.y) * 10.0 - t * 0.9);
-    return low * 0.50 + mid * 0.32 + high * 0.18;
-}
-
-float envRibbon(float2 uv, float y, float width, float phase) {
-    float curve = y + 0.075 * sin(uv.x * 8.0 + phase) + 0.035 * sin(uv.x * 17.0 - phase * 0.7);
-    return smoothstep(width, 0.0, abs(uv.y - curve));
-}
-
-float envBlob(float2 uv, float2 center, float2 scale) {
-    float2 q = (uv - center) / scale;
-    return smoothstep(1.0, 0.0, dot(q, q));
-}
-
-float3 studioEnv(float3 r, float fold, float density) {
-    float2 uv = r.xy * 0.5 + 0.5;
-    float3 floorCol = float3(0.09, 0.095, 0.105);
-    float3 skyCol = float3(0.84, 0.86, 0.88);
-    float3 col = mix(floorCol, skyCol, smoothstep(0.03, 0.98, uv.y));
-
-    float topSoftbox = envBlob(uv, float2(0.34, 0.82), float2(0.42, 0.18));
-    float sideSoftbox = envBlob(uv, float2(0.78, 0.56), float2(0.16, 0.30));
-    float bottomSoftbox = envBlob(uv, float2(0.58, 0.18), float2(0.46, 0.13));
-    float whiteRibbon = envRibbon(uv, 0.62, 0.035 + 0.018 * density, fold * 3.0);
-    float lowerRibbon = envRibbon(uv, 0.32, 0.026 + 0.014 * density, -fold * 2.0 + 1.7);
-    float darkRibbon = envRibbon(uv, 0.47, 0.055, fold * 1.5 + 2.4);
-    float darkPanelA = envBlob(uv, float2(0.22, 0.35), float2(0.22, 0.32));
-    float darkPanelB = envBlob(uv, float2(0.86, 0.33), float2(0.12, 0.28));
-    float noisePanel = smoothstep(0.46, 0.88, fbm(uv * 3.0 + fold));
-
-    col = mix(col, float3(0.025, 0.027, 0.030), darkPanelA * 0.48 + darkPanelB * 0.34);
-    col = mix(col, float3(0.050, 0.052, 0.058), darkRibbon * 0.42 * (1.0 - topSoftbox));
-    col = mix(col, float3(0.16, 0.17, 0.18), noisePanel * 0.12);
-    col += float3(1.08, 1.06, 1.00) * topSoftbox;
-    col += float3(0.80, 0.82, 0.84) * whiteRibbon;
-    col += float3(0.48, 0.52, 0.58) * lowerRibbon;
-    col += float3(0.36, 0.42, 0.48) * sideSoftbox;
-    col += float3(0.30, 0.31, 0.32) * bottomSoftbox;
-    return col;
-}
-
-float materialDensity(float mode) {
-    if (mode < 0.5) {
-        return 0.92;
-    }
-    if (mode < 1.5) {
-        return 0.45;
-    }
-    return 0.62;
-}
-
-float3 normalAt(float2 p, float z, float t, float warp, float detail, float density) {
-    float eps = 2.0 / min(u_resolution.x, u_resolution.y);
-    float h = heightField(p, t, detail) + acousticWave(p, t, density) * 0.22;
-    float hx = heightField(p + float2(eps, 0.0), t, detail) + acousticWave(p + float2(eps, 0.0), t, density) * 0.22 - h;
-    float hy = heightField(p + float2(0.0, eps), t, detail) + acousticWave(p + float2(0.0, eps), t, density) * 0.22 - h;
-    float bump = mix(0.85, 2.35, orbSaturate(warp)) * mix(1.22, 0.62, density);
-    float3 membrane = normalize(float3(-hx * bump, -hy * bump, 1.0));
-    float3 sphere = normalize(float3(p.x, p.y, z));
-    return normalize(sphere + membrane * mix(0.28, 0.54, 1.0 - density));
+// Perturb the sphere normal in 3D: tangential folds + a radial "push from inside".
+float3 perturbNormal3(float3 sp, float3 baseN, float t, float warp, float detail, float amp) {
+    float e = 0.055;
+    float h = reliefRot(sp, t, detail);
+    float hx = reliefRot(sp + float3(e, 0.0, 0.0), t, detail) - h;
+    float hy = reliefRot(sp + float3(0.0, e, 0.0), t, detail) - h;
+    float hz = reliefRot(sp + float3(0.0, 0.0, e), t, detail) - h;
+    float3 grad = float3(hx, hy, hz) / e;
+    float3 tang = grad - dot(grad, baseN) * baseN;     // tangential component → folds
+    float bump = mix(0.35, 1.15, sat(warp)) * (0.5 + amp * 0.5);
+    float3 N = normalize(baseN - tang * bump);
+    // push from inside: bulge outward where the relief is high
+    N = normalize(N + baseN * (h - 0.5) * (0.6 + amp) * 0.8);
+    return N;
 }
 
 half4 main(float2 fragCoord) {
     float2 res = max(u_resolution, float2(1.0));
     float size = min(res.x, res.y);
     float2 uv = (fragCoord - 0.5 * res) / (0.5 * size);
-    uv.y = -uv.y;
+    uv.y = -uv.y; // Y-up
 
-    float speed = resolvedSpeed();
-    float amp = resolvedAmp();
-    float warp = resolvedWarp();
-    float detail = resolvedDetail();
+    float speed = resolved(u_motionSpeed, u_speed);
+    float amp = resolved(u_motionAmp, u_wobble);
+    float warp = resolved(u_motionWarp, u_distortion);
+    float detail = resolved(u_motionDetail, u_detail);
     float t = u_time * speed;
     float mode = u_orbMaterial;
-    float density = materialDensity(mode);
+    float warm = sat(u_materialColor);
 
-    // The native Skin owns the silhouette. This shader only shades the material
-    // across the area painted by Android's Path.
-    float2 p = uv / 0.86;
-    float d = dot(p, p);
-    if (d > 0.985) {
-        p *= sqrt(0.985 / d);
-        d = dot(p, p);
-    }
-
-    float z = sqrt(max(0.0, 1.0 - d));
-    float3 baseN = normalize(float3(p.x, p.y, z));
-    float3 N = normalAt(p, z, t, warp, detail, density);
-    N = normalize(mix(baseN, N, orbSaturate(0.32 + amp * 0.46)));
+    // Sphere sized to match the native Path radius (0.405 of min ≈ 0.81 in uv units).
+    float2 p = uv / 0.81;
+    float dd = dot(p, p);
+    float z = sqrt(max(0.0, 1.0 - dd));
+    float3 sp = float3(p.x, p.y, z);           // point on the 3D sphere surface
+    float3 baseN = normalize(sp);
+    float3 N = perturbNormal3(sp, baseN, t, warp, detail, amp);
 
     float3 V = float3(0.0, 0.0, 1.0);
+    float ndv = sat(dot(N, V));
     float3 R = reflect(-V, N);
-    float ndv = orbSaturate(dot(N, V));
-    float fresnel = pow(1.0 - ndv, 2.35);
-    float fold = heightField(p * 1.2, t, detail) + acousticWave(p, t, density) * 0.20;
-    float3 env = studioEnv(R, fold, density);
-    float3 envSoft = studioEnv(reflect(-V, normalize(mix(baseN, N, 0.35))), fold + 0.23, density);
-    float3 L = normalize(float3(-0.36, 0.58, 0.73));
-    float3 H = normalize(L + V);
-    float shell = smoothstep(1.03, 0.12, length(p));
-    float volumeShade = mix(0.58, 1.08, z) * shell;
 
     float3 color;
+
     if (mode < 0.5) {
-        float vein = smoothstep(0.38, 0.82, heightField(p * 1.38 + float2(0.0, t * 0.035), t, detail));
-        float3 chrome = pow(env, float3(0.92)) * 1.16;
-        chrome = mix(chrome, envSoft, 0.28);
-        chrome = mix(chrome, float3(0.035, 0.038, 0.043), vein * 0.24);
-        float spec = pow(orbSaturate(dot(N, H)), 52.0);
-        float glint = pow(orbSaturate(dot(reflect(-L, N), V)), 18.0);
-        float3 edgeColor = mix(float3(0.45, 0.22, 0.50), float3(0.30, 0.56, 0.34), orbSaturate(u_materialColor));
-        color = chrome * mix(0.88, 1.12, volumeShade);
-        color += float3(1.0) * spec * 0.78 + float3(0.80, 0.86, 0.92) * glint * 0.22;
-        color += edgeColor * fresnel * 0.22;
+        // ===== METAL — metallic Principled BSDF, mirror IBL =====
+        float3 baseTint = mix(float3(0.95, 0.96, 0.98), float3(1.02, 0.98, 0.92), warm);
+        float3 spec = sampleEnvSoft(R, 0.10 + 0.15 * warp);
+        float3 F = mix(baseTint * 0.85, float3(1.0), pow(1.0 - ndv, 5.0));
+        color = spec * F;
+        float3 irid = 0.5 + 0.5 * cos(6.2831 * (pow(1.0 - ndv, 3.0) * 1.4 + float3(0.0, 0.33, 0.67)));
+        color = mix(color, color * irid, smoothstep(0.6, 0.98, 1.0 - ndv) * 0.35);
     } else if (mode < 1.5) {
-        float internal = heightField(p * 1.70 + float2(t * 0.04, -t * 0.08), t, detail);
-        float caustic = smoothstep(0.56, 0.84, heightField(p * 2.75 + float2(-t * 0.06, t * 0.035), t, detail));
-        float3 deep = float3(0.18, 0.44, 0.60);
-        float3 milk = float3(0.66, 0.86, 0.94);
-        float3 cyan = float3(0.42, 0.94, 1.0);
-        float body = smoothstep(0.16, 0.88, internal) * 0.42 + z * 0.28;
-        float rim = pow(fresnel, 0.40);
-        float spec = pow(orbSaturate(dot(N, H)), 84.0);
-        color = mix(deep, milk, body) * volumeShade;
-        color += float3(0.36, 0.76, 0.92) * caustic * 0.22;
-        color = mix(color, cyan, rim * 0.42);
-        color += env * (0.16 + fresnel * 0.32);
-        color += float3(1.0) * spec * 0.88;
+        // ===== WATER / GLASS — dielectric, transmission + reflection =====
+        float ior = 1.33;
+        float f0 = 0.02;
+        float fres = f0 + (1.0 - f0) * pow(1.0 - ndv, 5.0);
+        float3 refl = sampleEnv(R);
+        float3 T = refract(-V, N, 1.0 / ior);
+        float3 through = sampleEnvSoft(T, 0.28);
+        float3 bodyTint = mix(float3(0.70, 0.86, 0.98), float3(0.58, 0.82, 0.99), warm);
+        float thickness = mix(0.05, 0.40, dd);
+        float3 transmitted = mix(through, through * bodyTint, thickness);
+        color = mix(transmitted, refl, sat(fres * 1.25));
+        float lum = max(refl.r, max(refl.g, refl.b));
+        color += refl * smoothstep(0.72, 1.0, lum) * 0.7;   // sharp window highlights
+        color += float3(0.85, 0.96, 1.0) * pow(1.0 - ndv, 2.4) * 0.5; // rim
     } else {
-        float angle = atan(p.y, p.x);
-        float film = fresnel * 0.62 + fold * 0.18 + sin(angle * 1.65 + t * 0.10) * 0.045;
-        float3 rainbow = 0.58 + 0.42 * cos(6.28318 * (film + float3(0.04, 0.38, 0.72)));
-        float3 pearl = float3(0.92, 0.88, 0.80) * mix(0.82, 1.08, z);
-        pearl += float3(0.05, 0.030, 0.070) * (1.0 - ndv);
-        float band = smoothstep(0.15, 0.80, fresnel + fold * 0.18);
-        float specA = pow(orbSaturate(dot(N, H)), 76.0);
-        float specB = pow(orbSaturate(dot(N, normalize(float3(0.34, -0.48, 0.80)))), 96.0);
-        color = mix(pearl, rainbow, band * 0.42);
-        color += env * (0.12 + fresnel * 0.12) + float3(1.0) * (specA * 0.46 + specB * 0.22);
+        // ===== IRIDESCENT — thin-film over a clear dielectric (soap bubble) =====
+        float fres = pow(1.0 - ndv, 2.0);
+        float3 refl = sampleEnv(R);
+        float3 T = refract(-V, N, 1.0 / 1.12);
+        float3 through = sampleEnvSoft(T, 0.35);
+        float band = fres * 1.7 + reliefRot(sp, t, detail) * 1.1 + 0.15;
+        float3 film = 0.5 + 0.5 * cos(6.2831 * (band + float3(0.0, 0.33, 0.67)));
+        float3 pearl = mix(through, float3(0.93, 0.92, 0.95), 0.45);
+        color = mix(pearl * mix(float3(1.0), film, 0.4), refl * film, sat(fres * 1.1 + 0.14));
+        color += refl * pow(1.0 - ndv, 4.0) * 0.25;
     }
 
-    float vignette = smoothstep(1.04, 0.15, length(p));
-    color *= mix(0.92, 1.05, vignette);
+    color = color / (color + 0.55) * 1.55;   // soft tonemap
     color += (hash21(fragCoord + u_time) - 0.5) / 255.0;
     return half4(half3(clamp(color, 0.0, 1.0)), 1.0);
 }

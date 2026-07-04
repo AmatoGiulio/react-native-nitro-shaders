@@ -1,6 +1,9 @@
 package com.margelo.nitro.nitroshaders
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -506,6 +509,28 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
     private var materialOrbShaderInit = false
     private var materialOrbRuntimeShader: RuntimeShader? = null
 
+    // Studio environment (equirectangular HDRI) reflected/refracted by the material.
+    private var envInit = false
+    private var envBitmap: Bitmap? = null
+    private var envShader: BitmapShader? = null
+
+    private fun ensureMaterialOrbEnv() {
+        if (envInit) {
+            return
+        }
+        envInit = true
+        val bmp = try {
+            appContext.assets.open("env/studio.png").use { BitmapFactory.decodeStream(it) }
+        } catch (e: Exception) {
+            null
+        }
+        val safe = bmp ?: Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also {
+            it.eraseColor(Color.rgb(128, 130, 134))
+        }
+        envBitmap = safe
+        envShader = BitmapShader(safe, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
+    }
+
     private fun materialOrbShader(): RuntimeShader? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             return null
@@ -638,6 +663,9 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
     }
 
     private fun setMaterialOrbUniforms(materialOrb: RuntimeShader, w: Float, h: Float) {
+        ensureMaterialOrbEnv()
+        envShader?.let { materialOrb.setInputShader("u_env", it) }
+        envBitmap?.let { materialOrb.setFloatUniform("u_envSize", it.width.toFloat(), it.height.toFloat()) }
         materialOrb.setFloatUniform("u_time", currentTimeSeconds())
         materialOrb.setFloatUniform("u_speed", speed.toFloat())
         materialOrb.setFloatUniform("u_resolution", w, h)

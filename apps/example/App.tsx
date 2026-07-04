@@ -6,16 +6,16 @@ export default function App() {
   return (
     <View style={styles.container}>
       <View style={styles.item}>
-        <MaterialOrb material="liquidChrome" style={styles.surface} />
-        <Text style={styles.label}>liquidChrome</Text>
+        <MaterialOrb material="metal" style={styles.surface} />
+        <Text style={styles.label}>metal</Text>
       </View>
       <View style={styles.item}>
-        <MaterialOrb material="liquidGlass" style={styles.surface} />
-        <Text style={styles.label}>liquidGlass</Text>
+        <MaterialOrb material="water" style={styles.surface} />
+        <Text style={styles.label}>water</Text>
       </View>
       <View style={styles.item}>
-        <MaterialOrb material="iridescentGlass" style={styles.surface} />
-        <Text style={styles.label}>iridescentGlass</Text>
+        <MaterialOrb material="iridescent" style={styles.surface} />
+        <Text style={styles.label}>iridescent</Text>
       </View>
       <StatusBar style="auto" />
     </View>

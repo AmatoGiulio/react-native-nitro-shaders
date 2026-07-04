@@ -1,190 +1,96 @@
-# Engineering Design Document: Orb 3D Materials
+# Engineering: Orb 3D Materials (mini-PBR + IBL)
 
 **Project:** Material × Motion × Skin (v2)
-**Target Platforms:** Android (AGSL / RuntimeShader) & iOS (Metal)
-**Status:** Ready for implementation
-**Autorità:** documento di implementazione dei tre material orb (`metal`, `water`,
-`iridescent`). L'API pubblica vive in
-[../architecture/material-motion-skin.md](../architecture/material-motion-skin.md);
-le tecniche generali in [shader-techniques.md](shader-techniques.md).
+**Platforms:** Android (AGSL / RuntimeShader) — validato. iOS (Metal) — da portare.
+**Status:** implementato e validato su Android (2026-07-04).
+**Autorità:** documento tecnico dell'engine dei tre material orb (`metal`, `water`,
+`iridescent`). API pubblica: [../architecture/material-motion-skin.md](../architecture/material-motion-skin.md).
+Percorso e vicoli ciechi: [../process/ORB_MATERIALS_JOURNEY.md](../process/ORB_MATERIALS_JOURNEY.md).
+
+> Storia: gli approcci procedurali (environment finto con `sin`, matcap
+> procedurale, raymarch senza ambiente reale) sono stati abbandonati perché non
+> producono riflessi naturali. Vedi il JOURNEY. Questo documento descrive SOLO
+> l'architettura vincente.
 
 ---
 
-## 0. Riconciliazione con lo stato attuale (leggere prima)
+## 1. Idea: come Blender/Eevee, in real-time
 
-Questo EDD è il TARGET. Divergenze note dal codice attuale, da chiudere nelle
-milestone qui sotto:
+Una sfera resa come un **Principled BSDF con Image-Based Lighting**: riflette e
+rifrange un **HDRI di studio reale**. L'ambiente è separato dal material; il
+material è un **preset di parametri PBR**. È la stessa filosofia con cui i material
+BlenderKit ottengono il loro look (dal World HDRI).
 
-- **Naming**: i material pubblici sono `metal` / `water` / `iridescent` (vedi
-  `MaterialName`). L'attuale componente `MaterialOrb` usa ancora i nomi vecchi
-  `liquidChrome`/`liquidGlass`/`iridescentGlass` (mode 0/1/2 dell'AGSL) e va
-  rimosso nella migrazione a `MaterialView` (R2).
-- **Silhouette**: l'AGSL attuale calcola la silhouette DENTRO lo shader (SDF +
-  wobble). L'EDD la vuole NATIVA (Path/Stencil). Coerente con la milestone:
-  resta in-shader come scaffolding fino alla **Fase 4** (skin+mask), poi esce.
-- **Motion**: R1 ha aggiunto le uniform `u_motion*` allo spec Nitro, ma lo shader
-  legge ancora le vecchie `u_speed/u_wobble/u_distortion/u_detail`. La migrazione
-  a `u_motion*` è parte di Fase 2/4.
-- **iOS**: nessuno shader orb in Metal ancora (con `materialOrb` iOS disegna solo
-  il `solid` nero). È la Fase 3.
+File: `android/src/main/assets/shaders/material-orb.agsl`,
+`android/src/main/assets/env/studio.png` (equirettangolare, CC0 Poly Haven).
 
----
+## 2. Environment (IBL)
 
-## 1. Vincoli architetturali
+- `uniform shader u_env;` + `uniform float2 u_envSize;` — l'HDRI equirettangolare
+  passato da Kotlin come `BitmapShader` (`RuntimeShader.setInputShader`, tile REPEAT
+  in U / CLAMP in V).
+- Campionamento da direzione 3D → equirettangolare:
+  ```glsl
+  u = atan(dir.z, dir.x) / (2π) + 0.5;
+  v = acos(clamp(dir.y,-1,1)) / π;      // 0 = alto
+  color = u_env.eval(vec2(u,v) * u_envSize).rgb;
+  ```
+- `sampleEnvSoft(dir, rough)`: 5 tap tangenti per riflessi più morbidi (roughness).
 
-1. **Silhouette esterna allo shader** (target): il material calcola *solo* il
-   colore del pixel sul quad; la forma (bolla/blob/sfera/testo/svg) è ritagliata
-   da maschere native (Path/Canvas su Android, Stencil su iOS).
-2. **Motion layer**: `speed`, `warp`, `amplitude`, `detail`, `seed` arrivano da un
-   ticker nativo come uniform, uguali su entrambe le piattaforme.
-3. **No derivative functions**: AGSL non ha `dFdx`/`dFdy`. Le normali di
-   superficie si calcolano con **differenze finite** (step `eps` legato alla
-   risoluzione passata come uniform). Su Metal si usa lo stesso metodo per parità.
-4. **Performance**: 60 FPS fascia media. Max 4–5 ottave fBm. Evitare branch
-   dinamici pesanti (preferire `mix`/`clamp`/`smoothstep`). Palette limitata.
+## 3. Geometria 3D + superficie viva
 
----
+- Normale sferica analitica: `z = sqrt(1-|p|²)`, `p = uv/0.81` (per riempire la
+  maschera nativa, raggio Path `0.405*min`). `uv.y` flippato (AGSL Y-down).
+- **Rilievo con noise 3D SULLA superficie** `sp = (p.x, p.y, z)` — non 2D sul piano.
+- Il dominio del noise **ruota nel tempo** su assi Y+X (`rotate3`, `reliefRot`) →
+  la skin orbita in tutte le direzioni.
+- `perturbNormal3`: gradiente 3D → componente **tangenziale** (pieghe) + **bulge
+  radiale** lungo la normale ("spinta da dentro").
 
-## 2. L'ingrediente base: normale sferica analitica
+## 4. I tre material (preset PBR)
 
-Tutti e tre i material derivano l'ottica da una normale 3D generata dal pixel del
-quad (camera ortografica).
-
-```glsl
-// uv centrato sul quad, in [-1, 1]
-vec2 p = uv;
-float z = sqrt(1.0 - clamp(dot(p, p), 0.0, 1.0));
-vec3 N  = normalize(vec3(p.x, p.y, z));
-vec3 V  = vec3(0.0, 0.0, 1.0);                       // vista ortografica
-float fresnel = pow(1.0 - max(dot(N, V), 0.0), 5.0); // Schlick
-```
-
-`N` va poi perturbata da un height field a bassa frequenza (piccola ampiezza) per
-il moto di superficie — vedi §3.2 per le differenze finite.
-
----
-
-## 3. Specifica dei tre material
-
-### 3.1 `iridescent`
-
-**Target shippato = perla opaca** (come `references/materials/iridescent.png`):
-base lattiginosa opaca al centro, bande arcobaleno morbide concentrate verso il
-bordo via fresnel. È la variante che implementiamo di default (decisione Giulio,
-2026-07-03: si segue la ref, non la bolla trasparente).
-
-La variante **bolla di sapone trasparente** qui sotto resta documentata come
-opzione (centro trasparente) ma NON è il default: usare `alpha` opaco (~1) e una
-base perlacea invece di `mix(vec3(0.0), iriCol, fresnel)` se si vuole la perla.
-
-```glsl
-// thin-film interference
-float thickness = fresnel * 0.8 + 0.2;
-vec3  iriCol    = 0.5 + 0.5 * cos(6.28318 * (thickness + vec3(0.0, 0.33, 0.67)));
-// highlight Blinn-Phong
-float spec  = pow(max(dot(N, normalize(L + V)), 0.0), 80.0);
-// alpha: centro trasparente, bordi opachi
-float alpha = 0.1 + fresnel * 0.9;
-vec3  final = mix(vec3(0.0), iriCol, fresnel) + vec3(spec);
-```
-
-Trappola: concentrare l'iridescenza troppo sul rim estremo produce un anello
-sottile e aliasato → allargare le bande (frequenza più bassa) e sfumarle via dal
-bordo estremo.
-
-### 3.2 `metal` / liquidMetal (cromo / mercurio)
-
-Metallo liquido deformato, riflessi contrastati chiaro/scuro.
-
-```glsl
-// perturbazione della normale: muovere la superficie, non la sfera
-float height = fbm(p * u_motionScale + u_time * u_motionSpeed);
-float eps = 1.0 / min(uResolution.x, uResolution.y);
-float hx  = fbm((p + vec2(eps, 0.0)) * u_motionScale + u_time * u_motionSpeed) - height;
-float hy  = fbm((p + vec2(0.0, eps)) * u_motionScale + u_time * u_motionSpeed) - height;
-vec3 deformN = normalize(vec3(-hx * u_motionWarp, -hy * u_motionWarp, 1.0));
-vec3 finalN  = normalize(mix(N, deformN, 0.5));
-
-// fake environment (matcap / bande chrome) campionato da finalN.xy
-float env = finalN.y * 0.5 + 0.5;                 // gradiente alto/basso (studio)
-env += sin(finalN.x * 30.0 + u_time * 0.5) * 0.1; // striature metalliche
-vec3 final = mix(vec3(0.05), vec3(1.0), env);     // grigio scuro → bianco
-final += fresnel * 0.5;                            // fresnel bianco ai bordi
-```
-
-Per un look più "studio softbox" invece di bande dure: sostituire il gradiente
-lineare con una env a due stop (pavimento → mid → cielo) + key light larga in
-alto (vedi implementazione AGSL corrente `studioEnv`).
-
-### 3.3 `water` / liquidGlass (gel azzurro)
-
-Acqua/gel translucido con subsurface scattering (luce che esce dai bordi).
-
-```glsl
-// SSS fake via rim
-float rim = 1.0 - max(0.0, dot(N, V));
-float sss = pow(rim, 3.0) * 0.6;
-
-vec3 baseColor = vec3(0.3, 0.6, 0.8);   // blu desaturato (centro)
-vec3 glowColor = vec3(0.5, 0.9, 1.0);   // ciano brillante (bordi)
-
-// rifrazione finta: distorce le coord di campionamento col normale
-vec2 uv_distorted = uv + N.xy * 0.02;
-
-float alpha = mix(0.2, 0.9, rim);       // centro più trasparente dei bordi
-vec3  final = mix(baseColor, glowColor, sss);
-```
-
----
-
-## 4. Pipeline di implementazione
-
-### 4.1 Android (AGSL — RuntimeShader)
-
-- API 33+; fallback texture statica < API 33.
-- `MaterialView` disegna un `Rect` con `Canvas` + `Paint(RuntimeShader)`.
-- Uniform: `u_time` (Choreographer), `u_resolution`, `u_motionSpeed/Amp/Warp/Detail/Seed`.
-- NON usare `dFdx`/`dFdy` → differenze finite (§3.2). Preferire `mix`/`clamp`.
-
-### 4.2 iOS (Metal / MetalKit)
-
-- `MTKView` + `CAMetalLayer`; shader `.metal` nella default library.
-- `MTLBuffer` con struct C allineata alle STESSE uniform di Android.
-- Alpha blend via `MTLRenderPipelineDescriptor` (blending enabled).
-- Silhouette via **stencil buffer**: disegnare il Path/Bezier nello stencil, poi
-  il quad shaderizzato solo dove lo stencil è marcato.
-
----
-
-## 5. Milestone (DoD)
-
-| Fase | Descrizione | Criteri di accettazione |
+| Material | Modello | Parametri chiave |
 |---|---|---|
-| **F1 — Shader puro** | Fragment shader unico che dimostra normale sferica + 3 material, `u_time` fermo. | Le 3 ref riproducibili staticamente su un quad. |
-| **F2 — Android** | Integrazione in RuntimeShader AGSL, differenze finite, `Canvas.drawRect`, consumo delle `u_motion*`. | 60 FPS su Pixel 6-class, nessun errore AGSL, validazione visiva Giulio. |
-| **F3 — iOS** | Traduzione in MSL, `MTKView`, uniform buffer. | 60 FPS su iPhone 12+, output ≈95% identico ad Android a parità di parametri. |
-| **F4 — Skin & Motion** | Uniform dal ticker Motion; maschera nativa silhouette (Path Android / Stencil iOS). | Forma ritagliata senza artefatti ai bordi. |
+| `metal` (mode 0) | metallico: riflessione a specchio dell'IBL, tinta base, fresnel | reflection = `sampleEnvSoft(R)`, tint via `u_materialColor` |
+| `water` (mode 1) | dielettrico: `transmission` (refract → vede attraverso), reflection via Fresnel, rim + highlight finestre | `ior 1.33`, body tint azzurro, thickness ∝ profondità |
+| `iridescent` (mode 2) | thin-film su dielettrico (bolla di sapone) | `0.5+0.5*cos(2π*(band + RGBoffset))`, band ∝ fresnel + rilievo |
 
-Mappatura sulla roadmap del repo (STACK.md): F2↔R2, F3↔R5, F4↔R2/R3/R4. F1 è un
-passo di de-risking opzionale (prototipo su Shadertoy) prima di R2.
+Tonemap morbido finale + dithering per evitare banding.
 
----
+## 5. Uniform (contratto attuale)
 
-## 6. Trappole da evitare
+Consumati dallo shader (Kotlin li setta in `setMaterialOrbUniforms`):
+`u_env`, `u_envSize`, `u_resolution`, `u_time`, `u_orbMaterial`,
+e i parametri via `resolved(motion, legacy)` = `max(u_motion*, u_legacy)`:
+`speed`, `wobble`→amp, `distortion`→warp, `detail`, `u_motionSeed`, `u_materialColor`.
 
-- **Banding** gradienti: dithering a fine shader `final += (hash(uv+u_time)-0.5)/255.0`.
-- **Tempo**: `u_time` float32 dal ticker nativo ogni frame. MAI passare il tempo
-  dal thread JS.
-- **DebugTime**: `u_debugTime` per snapshot deterministici (già presente come
-  `debugTime` nel contratto). In debug il tempo esterno sovrascrive il clock.
-- **Seed**: `u_motionSeed` fisso per consistenza visiva iOS↔Android; variabile solo
-  se serve rumore diverso per device.
+Nota: la **rotazione per-asse** è per ora hardcoded (`t*0.30` / `t*0.42`). Va esposta
+come parametro nella parametrizzazione (vedi HANDOFF → prossimi passi).
 
----
+## 6. Skin (silhouette) e ombra — native
 
-## 7. Riferimenti
+La silhouette organica (Path wobbly) e l'ombra ellittica sono disegnate da Kotlin
+(`buildMaterialOrbPath`, `drawMaterialOrbShadow`), non dallo shader. Lo shader
+riempie il Path (`drawPath`) e restituisce `alpha = 1`.
 
+## 7. iOS (da fare)
+
+Portare l'engine in Metal: `MTKView`, l'HDRI come `MTLTexture` campionata allo
+stesso modo, `refract`/`reflect` nativi, silhouette via stencil/Path. Stessi
+parametri e stesso env per parità visiva con Android.
+
+## 8. Trappole (dal JOURNEY)
+
+- AGSL `fragCoord.y` è verso il basso → flippare `uv.y`.
+- `uv` va scalato a `0.5*size` o la sfera è una calotta.
+- Non usare nomi di built-in SkSL (`floor`) come variabili.
+- Output straight-alpha (no premoltiplicazione) per evitare aloni sul bordo.
+- Performance: noise 3D + gradiente a 4 tap è il costo dominante; tenere fBm3 a 3
+  ottave, orb piccoli. Ottimizzare l'HDRI (WebP / 512×256) prima della pubblicazione.
+
+## Riferimenti
+
+- Reference visive: `docs/references/materials/` (+ video @jc_builds).
+- IBL/matcap: https://github.com/hughsk/matcap · Poly Haven (HDRI CC0): https://polyhaven.com
 - AGSL: https://developer.android.com/develop/ui/views/graphics/agsl
 - Metal Shading Language: https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf
-- MatCap (metal): https://github.com/hughsk/matcap
-- Thin-film / glass (iridescent, water): Shadertoy `XdVfDd` (glass sphere refraction), `4sXGRj` (soap bubble).

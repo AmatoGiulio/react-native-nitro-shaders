@@ -1,0 +1,19 @@
+# Asset licenses & provenance
+
+Asset di terzi bundlati o usati come reference nel repo.
+
+## Bundlati nel pacchetto (spediti nell'app)
+
+| Asset | Uso | Provenienza | Licenza |
+|---|---|---|---|
+| `packages/react-native-nitro-shaders/android/src/main/assets/env/studio.png` | Environment IBL (studio) riflesso dai material orb | Poly Haven — `studio_small_08` (HDRI), convertito a PNG equirettangolare 1024×512 | CC0 (public domain) |
+
+## Reference (non spediti)
+
+| Asset | Uso | Provenienza | Licenza |
+|---|---|---|---|
+| `references/liquid-metal/paper-design-reference.ts` | Reference per il material `liquidMetal` | paper-design/shaders | Apache 2.0 — vedi `liquid-metal/ATTRIBUTION.md` |
+| `references/materials/*.png`, `*.webp`, `*.mp4` | Target visivi orb (BlenderKit previews, app @jc_builds) | screenshot/preview di reference | uso solo come riferimento visivo interno |
+
+Nota: CC0 non richiede attribuzione, ma la provenienza è tracciata qui per chiarezza.
+Se si sostituisce l'HDRI con un altro environment, aggiornare questa tabella.

@@ -122,3 +122,14 @@ Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a f
 - Introdotta densita' per material: `metal` piu' denso/rigido e speculare, `water` piu' morbido/caustico, `iridescent` intermedio/perlaceo.
 - Kotlin Path: edge wobble ora usa la densita' del material, cosi' la skin non si muove uguale per tutti.
 - Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` verde. Validazione visuale runtime resta a Giulio.
+
+## [2026-07-04] - Orb materials - TRAGUARDO: mini-PBR + IBL + superficie 3D viva
+- Svolta dopo ~10 iterazioni procedurali fallite: le reference riflettono un HDRI di studio reale, non un env procedurale. Passaggio a Image-Based Lighting.
+- Analisi ref BlenderKit (clean water / liquid metal / soap bubble) + ricerca fattibilita' "import material Blender" (non fattibile 1:1: node tree, no export GLSL, glTF solo parametri PBR). Conclusione: replicare Eevee = PBR + IBL.
+- `material-orb.agsl` riscritto come mini-Principled BSDF: campiona un HDRI equirettangolare (`assets/env/studio.png`, CC0 Poly Haven studio_small_08) via `uniform shader u_env` (BitmapShader + `setInputShader` in Kotlin). Material = preset PBR: metal (metallico), water (dielettrico + transmission/refract), iridescent (thin-film).
+- Superficie 3D viva: rilievo con NOISE 3D sulla superficie sferica `(p,z)` ruotato nel tempo su assi Y+X (`rotate3`/`reliefRot`) + bulge radiale ("spinta da dentro"). Centra i 3 requisiti di Giulio (3D vera, forza da dentro, orbita in ogni direzione).
+- Validato visivamente da Giulio su Android: metal/water/iridescent accettabili.
+- Cleanup codebase: rinominati i material a `metal`/`water`/`iridescent` (via i vecchi `liquidChrome`/`liquidGlass`/`iridescentGlass`) in `material-orb.ts`, `MaterialOrb.tsx`, demo `App.tsx`; rimosso campo ridondante `materialName`/`MATERIAL_ORB_DEFAULTS`.
+- Doc riallineate al traguardo: EDD `orb-materials.md` riscritto per IBL (rimosso l'env procedurale morto); nuovo `ORB_MATERIALS_JOURNEY.md` (post-mortem dei tentativi + cosa ha fatto il salto); HANDOFF ripulito a snapshot; README/indice aggiornati; memoria `reference-are-hdri-reflective`.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- Prossimo: parametrizzazione (rotazione per-asse, roughness/transmission/ior), poi cleanup R2 (MaterialView) e iOS Metal.

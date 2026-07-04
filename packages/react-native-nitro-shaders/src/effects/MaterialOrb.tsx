@@ -21,9 +21,9 @@ export type MaterialOrbProps = {
 }
 
 export function MaterialOrb(props: MaterialOrbProps) {
-  const material = props.material ?? 'liquidChrome'
+  const material = props.material ?? 'metal'
   const preset = MATERIAL_ORB_PRESETS[material]
-  const baseMotion = resolveMotion(props.motion, preset.materialName)
+  const baseMotion = resolveMotion(props.motion, material)
   const resolvedMotion =
     props.motion === undefined
       ? {
