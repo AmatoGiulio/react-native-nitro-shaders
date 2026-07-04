@@ -484,8 +484,6 @@ internal class ShaderSurfaceView(context: Context): View(context), Choreographer
     private val solidMaterial: ShaderMaterial = SolidMaterial()
     private val materials: Map<String, ShaderMaterial> = listOf(
         MaterialOrbMaterial(),
-        LiquidMetalMaterial(),
-        FluidGradientMaterial(),
         solidMaterial
     ).associateBy { it.name }
 

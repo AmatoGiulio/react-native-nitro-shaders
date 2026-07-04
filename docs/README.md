@@ -28,7 +28,6 @@ appartiene a più sezioni, vive in una sola ed è linkata dalle altre.
 
 ### references
 - [materials/](references/materials/) — screenshot/video target per material (`metal`, `water`, `iridescent`, `fluidgradient`, overview, liquid orb motion).
-- [liquid-metal/](references/liquid-metal/) — reference Paper Design + `ATTRIBUTION.md` (Apache 2.0).
 - [smoke-shaders.png](references/smoke-shaders.png) — reference chrome/smoke standalone.
 - [ASSET-LICENSES.md](references/ASSET-LICENSES.md) — provenienza e licenze degli asset di terzi (es. HDRI studio CC0).
 

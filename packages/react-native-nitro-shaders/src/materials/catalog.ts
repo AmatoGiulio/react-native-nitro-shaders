@@ -1,14 +1,8 @@
-export type MaterialName =
-  | 'fluidGradient'
-  | 'liquidMetal'
-  | 'metal'
-  | 'water'
-  | 'iridescent'
+export type MaterialName = 'metal' | 'water' | 'iridescent' | 'aura'
 
 export const MATERIAL_NAMES: readonly MaterialName[] = [
-  'fluidGradient',
-  'liquidMetal',
   'metal',
   'water',
   'iridescent',
+  'aura',
 ] as const

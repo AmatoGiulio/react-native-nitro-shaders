@@ -101,8 +101,14 @@ forma di riferimento dei material orb; `metal` la adotta (prima: cerchio wobbly)
   condivise. Rimuovere anche il vecchio `fluidGradient` come componente-effetto.
 - **`fluidGradient` → `aura`**: material neon (`aura.webp`) reso come sfera (geometria
   orb): glow verde/magenta al bordo, interno viola con flussi rosa, punto luce blu.
-- DoD: `aura` ≈ ref, `liquidMetal`/`fluidGradient` rimossi; typecheck/test/build
-  verdi; validazione Giulio; doc aggiornata.
+- **Decisione orchestratore (rischio codegen)**: in Fase 1 NON si tocca lo spec
+  Nitro. Le prop specifiche di liquidMetal/fluid (shape, colorBack, repetition,
+  scale, warp, grain, ...) restano nello spec **inutilizzate** (debito temporaneo
+  dichiarato); la pulizia dello spec + rigenerazione codegen è un passo dedicato
+  successivo, quando l'API material (aura/glass) è stabile. Così il codegen resta
+  intatto e i due lavori (rimozione / aura) sono paralleli e disgiunti.
+- DoD: `aura` ≈ ref, `liquidMetal`/`fluidGradient` rimossi (componenti/impl/asset);
+  typecheck/test/build verdi; validazione Giulio; doc aggiornata.
 
 ## Fase 2 — forma condivisa, metal, glass, poi il resto
 

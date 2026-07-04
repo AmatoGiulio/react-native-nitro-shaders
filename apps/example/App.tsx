@@ -17,6 +17,10 @@ export default function App() {
         <MaterialOrb material="iridescent" style={styles.surface} />
         <Text style={styles.label}>iridescent</Text>
       </View>
+      <View style={styles.item}>
+        <MaterialOrb material="aura" style={styles.surface} />
+        <Text style={styles.label}>aura</Text>
+      </View>
       <StatusBar style="auto" />
     </View>
   );

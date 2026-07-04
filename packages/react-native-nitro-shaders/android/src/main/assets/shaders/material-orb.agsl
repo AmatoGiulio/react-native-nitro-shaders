@@ -12,7 +12,7 @@ uniform float2 u_envSize;   // env bitmap size in pixels
 uniform float2 u_resolution;
 uniform float u_time;
 uniform float u_speed;
-uniform float u_orbMaterial; // 0: metal, 1: water/glass, 2: iridescent
+uniform float u_orbMaterial; // 0: metal, 1: water/glass, 2: iridescent, 3: aura
 uniform float u_wobble;
 uniform float u_distortion;
 uniform float u_detail;
@@ -178,7 +178,7 @@ half4 main(float2 fragCoord) {
         float lum = max(refl.r, max(refl.g, refl.b));
         color += refl * smoothstep(0.72, 1.0, lum) * 0.7;   // sharp window highlights
         color += float3(0.85, 0.96, 1.0) * pow(1.0 - ndv, 2.4) * 0.5; // rim
-    } else {
+    } else if (mode < 2.5) {
         // ===== IRIDESCENT — thin-film over a clear dielectric (soap bubble) =====
         float fres = pow(1.0 - ndv, 2.0);
         float3 refl = sampleEnv(R);
@@ -189,6 +189,56 @@ half4 main(float2 fragCoord) {
         float3 pearl = mix(through, float3(0.93, 0.92, 0.95), 0.45);
         color = mix(pearl * mix(float3(1.0), film, 0.4), refl * film, sat(fres * 1.1 + 0.14));
         color += refl * pow(1.0 - ndv, 4.0) * 0.25;
+    } else {
+        // ===== AURA — emissive neon energy orb (bioluminescent, no IBL) =====
+        // Fully self-lit: a domain-warped neon palette flows inside the sphere,
+        // a bipolar fresnel rim glows green<->magenta at the edge, and a tiny
+        // blue core highlight sits near the centre. No environment reflection.
+
+        // Fluid domain warp of the surface point, driven by the same rotating
+        // 3D noise used for the relief → flows animate over the living skin.
+        float3 sp2 = rotate3(sp, t * 0.22 + u_motionSeed, t * 0.34);
+        float3 warpDir = float3(
+            fbm3(sp2 * 1.7 + float3(0.0, t * 0.5, 0.0)),
+            fbm3(sp2 * 1.7 + float3(5.2, t * 0.5, 1.3)),
+            fbm3(sp2 * 1.7 + float3(9.1, t * 0.5, 4.7))
+        );
+        float flowScale = mix(1.4, 2.8, sat(detail * 0.5));
+        float3 wp = sp2 * flowScale + (warpDir - 0.5) * (1.2 + warp * 1.6);
+        float flow = fbm3(wp + float3(0.0, 0.0, t * 0.6));
+        flow = sat(flow * 1.35 - 0.15);
+
+        // Neon interior palette: dark indigo/violet -> violet -> magenta -> hot pink.
+        float3 indigo  = float3(0.16, 0.08, 0.42);
+        float3 violet  = float3(0.42, 0.14, 0.72);
+        float3 magenta = float3(0.92, 0.20, 0.85);
+        float3 pink    = float3(1.00, 0.55, 0.90);
+        float3 inner = mix(indigo, violet, sat(flow * 1.6));
+        inner = mix(inner, magenta, sat((flow - 0.45) * 2.2));
+        inner = mix(inner, pink, sat((flow - 0.72) * 3.0));
+        // Small tint variation from u_materialColor (cooler <-> warmer neon).
+        inner = mix(inner, inner.bgr * float3(1.0, 0.9, 1.05), (warm - 0.5) * 0.4);
+
+        // Luminous flowing streams: bright ridges where the flow noise peaks.
+        float streams = pow(sat(fbm3(wp * 1.6 - float3(t * 0.7, 0.0, 0.0))), 3.0);
+        inner += pink * streams * 1.4;
+
+        color = inner;
+
+        // Bipolar fresnel rim: green at the bottom, magenta at the top/sides.
+        float fres = pow(1.0 - ndv, 2.6);
+        float vert = N.y * 0.5 + 0.5;                    // 0 bottom -> 1 top
+        float3 rimGreen   = float3(0.20, 1.00, 0.45);
+        float3 rimMagenta = float3(1.00, 0.20, 0.95);
+        float3 rimCol = mix(rimGreen, rimMagenta, smoothstep(0.30, 0.75, vert));
+        color += rimCol * fres * 2.6;
+
+        // Tiny blue core highlight near the sphere centre.
+        float core = smoothstep(0.16, 0.0, length(p)) * ndv;
+        color += float3(0.35, 0.55, 1.0) * core * 1.2;
+
+        color += (hash21(fragCoord + u_time) - 0.5) / 255.0;
+        return half4(half3(clamp(color, 0.0, 1.0)), 1.0);
     }
 
     color = color / (color + 0.55) * 1.55;   // soft tonemap

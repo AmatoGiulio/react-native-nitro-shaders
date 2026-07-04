@@ -30,24 +30,6 @@ export const MOTION_TYPE_VALUES: Record<MotionType, number> = {
 
 // Natural motion of each material.
 export const MOTION_DEFAULTS: Record<MaterialName, ResolvedMotion> = {
-  fluidGradient: {
-    motionType: 1,
-    motionSpeed: 1.0,
-    motionAmp: 1.0,
-    motionWarp: 0.6,
-    motionDetail: 1.0,
-    motionSeed: 0,
-    motionPeriod: 0,
-  },
-  liquidMetal: {
-    motionType: 3,
-    motionSpeed: 1.0,
-    motionAmp: 1.0,
-    motionWarp: 0.5,
-    motionDetail: 1.0,
-    motionSeed: 0,
-    motionPeriod: 3.0,
-  },
   metal: {
     motionType: 2,
     motionSpeed: 1.0,
@@ -72,6 +54,15 @@ export const MOTION_DEFAULTS: Record<MaterialName, ResolvedMotion> = {
     motionAmp: 0.4,
     motionWarp: 0.4,
     motionDetail: 1.0,
+    motionSeed: 0,
+    motionPeriod: 0,
+  },
+  aura: {
+    motionType: 1,
+    motionSpeed: 1.0,
+    motionAmp: 0.6,
+    motionWarp: 0.5,
+    motionDetail: 1.2,
     motionSeed: 0,
     motionPeriod: 0,
   },

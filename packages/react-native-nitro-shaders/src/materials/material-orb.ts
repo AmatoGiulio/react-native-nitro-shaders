@@ -1,6 +1,6 @@
 // Public orb material names. These match the target architecture (MaterialName);
 // mode index maps to u_orbMaterial in material-orb.agsl.
-export type MaterialOrbMaterial = 'metal' | 'water' | 'iridescent'
+export type MaterialOrbMaterial = 'metal' | 'water' | 'iridescent' | 'aura'
 
 // Per-material parameter preset, observed from the references
 // (docs/references/materials/ + the @jc_builds reference video).
@@ -62,6 +62,17 @@ export const ORB_MATERIALS: Record<MaterialOrbMaterial, OrbMaterialDefinition> =
       distortion: 0.28,
       detail: 1,
       materialColor: 1,
+    },
+  },
+  aura: {
+    name: 'aura',
+    orbMaterial: 3,
+    preset: {
+      speed: 1,
+      wobble: 0.6,
+      distortion: 0.5,
+      detail: 1.2,
+      materialColor: 0.5,
     },
   },
 }

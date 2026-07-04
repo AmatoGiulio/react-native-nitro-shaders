@@ -12,7 +12,6 @@ Asset di terzi bundlati o usati come reference nel repo.
 
 | Asset | Uso | Provenienza | Licenza |
 |---|---|---|---|
-| `references/liquid-metal/paper-design-reference.ts` | Reference per il material `liquidMetal` | paper-design/shaders | Apache 2.0 — vedi `liquid-metal/ATTRIBUTION.md` |
 | `references/materials/*.png`, `*.webp`, `*.mp4` | Target visivi orb (BlenderKit previews, app @jc_builds) | screenshot/preview di reference | uso solo come riferimento visivo interno |
 | `references/materials/aura.webp` | Target material `aura` (neon energy orb: glow verde/magenta, interno viola con flussi rosa, punto luce blu centrale) | fornita da Giulio 2026-07-04 | riferimento visivo interno |
 | `references/materials/glass.webp` | Target material `glass` (vetro/chrome liquido scuro traslucido, riflessi viola/blu + accenti rossi; la gemma rossa in basso a dx è un artefatto di ritaglio, da ignorare) | fornita da Giulio 2026-07-04 | riferimento visivo interno |
