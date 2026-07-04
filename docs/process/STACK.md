@@ -55,8 +55,10 @@ react-native-nitro-shaders/
 └── turbo.json
 ```
 
-Nota: la struttura `src/` sopra (`skins/`, `motions/`) è il TARGET dell'architettura
-v2; è in migrazione (R1 completata). `cpp/` esiste solo se serve logica non-shader.
+Nota: l'albero sopra è il TARGET. ATTUALE (2026-07-04):
+`src/{core, effects, materials, motions, specs}` — c'è `effects/` (FluidGradient,
+LiquidMetal, MaterialOrb) e NON c'è ancora `skins/`. `cpp/` non esiste ancora.
+La migrazione a `skins/` è R2.
 
 Decisione presa (vedi conversazione precedente): **un solo pacchetto pubblico
 ora**, modulare internamente. Estrazione di `core` in pacchetto privato separato
@@ -65,10 +67,10 @@ questa condizione si verifica).
 
 ## Convenzioni di naming
 
-- Componenti pubblici = le tre **Skin**: `MaterialView`, `MaterialText`,
-  `MaterialSvg`. Non esistono piu' componenti-per-effetto (`FluidGradient`,
-  `LiquidMetal`, `MaterialOrb` sono rimossi). Nessun prefisso `Nitro`/`RN` nel
-  nome del componente — solo nel nome del pacchetto.
+- Componenti pubblici TARGET = le tre **Skin**: `MaterialView`, `MaterialText`,
+  `MaterialSvg`. ATTUALE (2026-07-04): esistono ancora `FluidGradient`,
+  `LiquidMetal`, `MaterialOrb` in `src/effects/` (le Skin non esistono; da fare in
+  R2). Nessun prefisso `Nitro`/`RN` nel nome del componente — solo nel pacchetto.
 - Material = valore della prop `material` (stringa o oggetto), non un componente:
   `'fluidGradient' | 'liquidMetal' | 'metal' | 'water' | 'iridescent'`.
 - Motion = valore della prop `motion`: `'none' | 'flow' | 'wobble' | 'loop'`
@@ -87,9 +89,10 @@ Material × Motion × Skin (dettaglio in `docs/architecture/material-motion-skin
 
 1. **R1 — Contratto**: tipi TS `Material`/`Motion`, spec Nitro con uniform
    motion condivise + uniform per-material, codegen. DoD: typecheck verde.
-2. **R2 — Android materials piatti**: split `material-orb` in shading puro,
-   `MaterialView` con i 5 material su rect + motion plumbing. DoD: validazione
-   visiva Giulio dei 5 material.
+2. **R2 — Skin `MaterialView` + cleanup**: creare `MaterialView` che espone i 5
+   material; migrare/rimuovere `MaterialOrb`/`FluidGradient`/`LiquidMetal`;
+   parametrizzare i material orb. Nota: il rendering orb (IBL) è GIÀ fatto in
+   `MaterialOrb`; manca il wrapper Skin. DoD: validazione visiva Giulio.
 3. **R3 — Skin testo Android** (`MaterialText` via drawText). DoD: Giulio.
 4. **R4 — Skin SVG Android** (`MaterialSvg` via drawPath). DoD: Giulio.
 5. **R5 — iOS**: porting materials + skin (mask/stencil), debito default

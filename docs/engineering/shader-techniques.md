@@ -53,7 +53,13 @@ color = palette(v)
 L'effetto è una simulazione **estetica** cinematica, non un solver fisico di
 fluidi. Nessun Navier-Stokes.
 
-## Superficie metallica (base di metal / liquidMetal)
+## Superficie metallica procedurale (liquidMetal; NON più usata dagli orb)
+
+> I material orb `metal`/`water`/`iridescent` NON usano più questo approccio: ora
+> usano **IBL** (riflettono un HDRI reale) — vedi [orb-materials.md](orb-materials.md)
+> e [../process/ORB_MATERIALS_JOURNEY.md](../process/ORB_MATERIALS_JOURNEY.md). Il
+> fake-environment procedurale qui sotto resta come tecnica generica/storica
+> (es. per `liquidMetal`).
 
 Senza ray tracing, comporre:
 
@@ -93,9 +99,10 @@ final   = contrast(base + highlight*pow(chrome, k) + fresnel*edgeTint)
 
 ## Orb 3D: sfere metallo / vetro / iridescenti
 
-Spec autoritativa per i tre material orb (normale sferica analitica, env
-reflection procedurale, fresnel, specular, thin-film, alpha/SSS, milestone e
-DoD): **[orb-materials.md](orb-materials.md)** (Engineering Design Document).
+Spec autoritativa per i tre material orb (mini-PBR + **IBL** su HDRI reale, normale
+sferica, noise 3D sulla superficie + rotazione, transmission/thin-film):
+**[orb-materials.md](orb-materials.md)**. Percorso e tentativi falliti:
+**[../process/ORB_MATERIALS_JOURNEY.md](../process/ORB_MATERIALS_JOURNEY.md)**.
 
 Anti-pattern (l'errore della prima versione): colorare con noise 2D senza usare la
 normale per env/fresnel/specular → esce un disco piatto marmorizzato, non una sfera.

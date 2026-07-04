@@ -1,10 +1,28 @@
 # ARCHITECTURE — Material × Motion × Skin
 
-Fonte di verita' dell'architettura pubblica della libreria (decisa da Giulio,
-2026-07-03). Sostituisce il modello precedente "un componente per effetto"
-(`FluidGradient`, `LiquidMetal`, `MaterialOrb`). Questo documento è la fonte di
-verità dell'API pubblica; il reference tecnico è
-`../engineering/shader-techniques.md`.
+Fonte di verita' dell'architettura pubblica **target** (decisa da Giulio,
+2026-07-03). Questo documento è la fonte di verità dell'API *voluta*; il reference
+tecnico è `../engineering/shader-techniques.md`.
+
+> ## ⚠️ STATO ATTUALE vs TARGET (aggiornato 2026-07-04)
+> Questo documento descrive il TARGET. Lo stato REALE del codice oggi è diverso —
+> non confondere i due:
+>
+> | Aspetto | TARGET (questo doc) | ATTUALE (codice) |
+> |---|---|---|
+> | Componenti pubblici | `MaterialView`/`MaterialText`/`MaterialSvg` | `FluidGradient`, `LiquidMetal`, `MaterialOrb` in `src/effects/` (le Skin NON esistono ancora) |
+> | Struttura src | `core/ materials/ motions/ skins/` | `core/ effects/ materials/ motions/ specs/` (nessun `skins/`) |
+> | Orb | "non è un material, silhouette esce, diventa forma demo" | `metal`/`water`/`iridescent` SONO material, resi come sfera 3D via IBL in un unico `material-orb.agsl`; silhouette già nativa (Path Kotlin) |
+> | Render orb | env procedurale | **IBL** (riflette un HDRI reale) — vedi `../engineering/orb-materials.md` e `../process/ORB_MATERIALS_JOURNEY.md` |
+>
+> La migrazione TARGET (rimozione alias, `MaterialView`, `skins/`) è la roadmap R2+
+> e NON è ancora stata eseguita. Le frasi sotto scritte al passato ("rimossi",
+> "esce dallo shader") vanno lette come DECISIONI da attuare, non come fatti.
+>
+> **Tensione aperta emersa col traguardo IBL:** i material orb sono resi su una
+> normale **sferica** (servono per una forma 3D). Come si comporta un material IBL
+> sferico su una Skin piatta (testo/svg/rettangolo)? Da decidere — vedi
+> "Decisioni ancora aperte".
 
 ## Idea
 
@@ -38,9 +56,9 @@ Cinque materiali pubblici, piatti (niente famiglie/sottocategorie):
 |---|---|---|---|
 | `fluidGradient` | fusione in movimento di n colori | `colors[]`, `intensity`, `scale`, `warp`, `grain` | Android validato (Fase 2) |
 | `liquidMetal` | derivato Paper Design (Apache 2.0) | quelli attuali di LiquidMetal | Android validato (Fase 3) |
-| `metal` | chrome liquido chiaro, vene scure larghe | `color` (temperatura 0..1) | shading esistente in material-orb.agsl mode 0 |
-| `water` | gel azzurro translucido, rim ciano | `tint` | mode 1 |
-| `iridescent` | perla con bande arcobaleno al bordo | `hue` | mode 2 |
+| `metal` | cromo/metallo liquido (IBL) | oggi `materialColor`; target PBR: `metallic`, `roughness` | Android validato (IBL, mode 0) |
+| `water` | gel/acqua translucido (IBL) | oggi `materialColor`; target PBR: `transmission`, `ior` | Android validato (IBL, mode 1) |
+| `iridescent` | bolla di sapone thin-film (IBL) | oggi `materialColor`; target PBR: `iridescence` | Android validato (IBL, mode 2) |
 
 Ogni material e' un modulo shader (un blocco AGSL / una fragment Metal) che
 calcola SOLO il colore della superficie per pixel. La forma non e' affar suo.
@@ -109,15 +127,15 @@ Il material puo' diventare la pelle di:
 | `MaterialText` | testo | `canvas.drawText` con lo stesso Paint | rasterizzazione testo → alpha mask/stencil sul quad |
 | `MaterialSvg` | path vettoriale | `canvas.drawPath` (path da SVG `d`) | path → alpha mask/stencil |
 
-Principio chiave (metafora del vestito, decisa): **il masking sta nel layer
-nativo di disegno, NON nello shader**. Lo shader del material non conosce la
-silhouette. Conseguenza operativa: la silhouette orb wobbly oggi cablata in
-`material-orb.agsl` ESCE dallo shader. Il material calcola solo il colore
-della superficie; forma e alpha le mette la Skin.
+Principio chiave (metafora del vestito): **il masking sta nel layer nativo di
+disegno, NON nello shader**. Stato: già attuato per l'orb — silhouette (Path) e
+ombra sono disegnate da Kotlin, lo shader riempie il quad.
 
-L'orb non e' piu' un material: diventa (se serve in demo) una forma/skin
-procedurale. Le forme wobbly procedurali possono avere una alpha-stage
-condivisa opzionale, ma vivono nel layer Skin, non nel material.
+Nota (2026-07-04): `metal`/`water`/`iridescent` SONO material (definiscono
+l'aspetto e come riflettono la luce). La forma sferica del demo è una Skin. La
+frase originale "l'orb non è un material" serviva solo a non confonderli con
+l'effetto `liquidMetal`; resta però la tensione material-IBL-sferico ↔ Skin piatta
+(vedi "Decisioni ancora aperte").
 
 ## API pubblica (target finale)
 
@@ -139,8 +157,8 @@ Prop comuni a tutte le skin: `material`, `motion?`, `animated?`, `paused?`,
 | `ShaderSurface` (core) | resta il runtime interno; `MaterialView` e' il suo wrapper pubblico |
 | `FluidGradient` | `MaterialView material="fluidGradient"` (alias deprecato mantenuto durante la migrazione) |
 | `LiquidMetal` | `MaterialView material="liquidMetal"` (idem) |
-| `MaterialOrb` | RIMOSSO come componente: shading → materials `metal`/`water`/`iridescent`; silhouette orb → forma demo |
-| `material-orb.agsl` | split: shading nei tre material; silhouette fuori dallo shader |
+| `MaterialOrb` | componente demo LEGACY attuale (material `metal`/`water`/`iridescent`), da migrare a `MaterialView` |
+| `material-orb.agsl` | shader unico con mode 0/1/2 (IBL); silhouette già nativa (Path Kotlin), non splittato in tre file |
 | prop `speed`/`wobble`/`distortion`/`detail` | assorbite dal Motion (`speed`, `amplitude`, `warp`, `detail`) |
 | `materialColor` | parametro del material (`color`/`tint`/`hue`) |
 | loop seamless F3-D2 | motion `loop` |
@@ -181,11 +199,17 @@ src/
 - **Silhouette fuori dallo shader.** Metafora del vestito: material = tessuto,
   skin = corpo, motion = vestibilita'. L'orb non e' un material.
 - **Naming skin: `MaterialView` / `MaterialText` / `MaterialSvg`.**
-- **Alias rimossi subito.** `FluidGradient`, `LiquidMetal`, `MaterialOrb`
-  come componenti pubblici vengono eliminati: nessun utente esterno ancora,
-  API pulita da subito. Restano solo le tre Skin.
+- **Alias da rimuovere** (in R2, NON ancora fatto). `FluidGradient`,
+  `LiquidMetal`, `MaterialOrb` verranno eliminati a favore delle tre Skin quando
+  `MaterialView` esisterà. Oggi sono ancora i componenti pubblici.
 
 ## Decisioni ancora aperte
 
 - `fluidGradient`: `speed`/`warp` attuali migrano interamente nel Motion
-  (proposta) o restano anche come parametro material. Da confermare in R1.
+  (proposta) o restano anche come parametro material. Da confermare in R2.
+- **Material orb IBL su Skin piatte.** I material `metal`/`water`/`iridescent`
+  sono resi con IBL su normale sferica (pensati per una forma 3D). Su una Skin
+  piatta (testo/svg/rettangolo) la normale sferica non ha senso ovvio. Opzioni da
+  valutare: (a) i material orb valgono solo per Skin "a volume" (blob/sfera), e le
+  Skin piatte usano material 2D (fluidGradient); (b) il material espone una
+  "curvatura" configurabile; (c) altro. Emersa col traguardo IBL del 2026-07-04.
