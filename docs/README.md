@@ -23,6 +23,7 @@ appartiene a più sezioni, vive in una sola ed è linkata dalle altre.
 - [STACK.md](process/STACK.md) — stack, struttura repo, convenzioni, roadmap.
 - [HANDOFF.md](process/HANDOFF.md) — snapshot dello stato corrente (sovrascritto ogni sessione).
 - [ORB_MATERIALS_JOURNEY.md](process/ORB_MATERIALS_JOURNEY.md) — il percorso agli orb: tentativi falliti, la diagnosi e cosa ha fatto il salto (IBL + noise 3D).
+- [OPERATIONAL-PLAN.md](process/OPERATIONAL-PLAN.md) — piano operativo corrente (Fase 0 architettura/code-sharing, Fase 1 fluidGradient-as-material, Fase 2 metal 1:1 + nuovo glass).
 
 ### references
 - [materials/](references/materials/) — screenshot/video target per material (`metal`, `water`, `iridescent`, `fluidgradient`, overview, liquid orb motion).

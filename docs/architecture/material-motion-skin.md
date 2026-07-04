@@ -54,23 +54,27 @@ Cinque materiali pubblici, piatti (niente famiglie/sottocategorie):
 
 | Nome pubblico | Descrizione | Parametri propri | Stato |
 |---|---|---|---|
-| `fluidGradient` | fusione in movimento di n colori | `colors[]`, `intensity`, `scale`, `warp`, `grain` | Android validato (Fase 2) |
-| `liquidMetal` | derivato Paper Design (Apache 2.0) | quelli attuali di LiquidMetal | Android validato (Fase 3) |
-| `metal` | cromo/metallo liquido (IBL) | oggi `materialColor`; target PBR: `metallic`, `roughness` | Android validato (IBL, mode 0) |
-| `water` | gel/acqua translucido (IBL) | oggi `materialColor`; target PBR: `transmission`, `ior` | Android validato (IBL, mode 1) |
-| `iridescent` | bolla di sapone thin-film (IBL) | oggi `materialColor`; target PBR: `iridescence` | Android validato (IBL, mode 2) |
+| `metal` | metallo liquido cromato (IBL); forma da `glass.webp`, proprietà verso `metal.png` | `materialColor`; target PBR `metallic`/`roughness` | IBL, mode 0 |
+| `water` | gel/acqua translucido (IBL) | `materialColor`; target `transmission`/`ior` | IBL, mode 1 |
+| `iridescent` | bolla di sapone thin-film (IBL) | `materialColor`; target `iridescence` | IBL, mode 2 |
+| `aura` | neon energy orb (glow verde/magenta, flussi rosa) — ex `fluidGradient` | `colors`/glow | da fare (ref `aura.webp`) |
+| `glass` | chrome liquido scuro traslucido (riflessi viola/blu, accenti rossi) | `materialColor`; transmission | da fare (ref `glass.webp`) |
+
+Nota (2026-07-04): la lista definitiva è **5 material**: `metal`, `water`,
+`iridescent`, `aura`, `glass`. `liquidMetal` (Paper) e `fluidGradient` ESCONO
+(`fluidGradient` → `aura`) — vedi `../process/OPERATIONAL-PLAN.md` Fase 1.
 
 Ogni material e' un modulo shader (un blocco AGSL / una fragment Metal) che
 calcola SOLO il colore della superficie per pixel. La forma non e' affar suo.
 
 ```ts
 type Material =
-  | 'fluidGradient' | 'liquidMetal' | 'metal' | 'water' | 'iridescent'  // shorthand: default
-  | { type: 'fluidGradient'; colors: string[]; intensity?: number; scale?: number; warp?: number; grain?: number }
-  | { type: 'liquidMetal'; /* prop attuali */ }
+  | 'metal' | 'water' | 'iridescent' | 'aura' | 'glass'   // shorthand
   | { type: 'metal'; color?: number }
   | { type: 'water'; tint?: number }
   | { type: 'iridescent'; hue?: number }
+  | { type: 'aura'; colors?: string[]; glow?: number }
+  | { type: 'glass'; tint?: number }
 ```
 
 ## Asse 2 — Motion

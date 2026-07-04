@@ -35,18 +35,17 @@ orb non implementato.
 `resolveMotion`, `MOTION_DEFAULTS`), spec Nitro con 7 uniform `u_motion*`, override
 Kotlin storage-only, unit test `bun test` 6/6.
 
-## Prossimi passi (in ordine)
-1. **Parametrizzazione** — esporre i parametri configurabili come nel video ref:
-   rotazione per-asse (orizzontale/verticale, ora hardcoded `t*0.30`/`t*0.42`),
-   `roughness`, `transmission`, `ior`, intensità iridescenza. Un material = un set
-   di parametri Principled → base per "importare" material (glTF/BlenderKit).
-2. **Cleanup / R2** — migrare `MaterialOrb` → `MaterialView` (skin), foldare
-   `FluidGradient`/`LiquidMetal` sotto la stessa API e rimuoverli, consumare
-   `u_motion*` come unica fonte (oggi via `resolved(motion, legacy)`).
-3. **iOS** — portare l'engine IBL in Metal (env come `MTLTexture`, refract/reflect,
-   silhouette via stencil/Path). Oggi con `materialOrb` iOS non rende l'orb.
-4. **Ottimizzazione asset** — HDRI 382KB PNG → WebP / 512×256 (~50-100KB).
-5. **Rifiniture** — orientamento studio riflesso, contact shadow, bloom softbox.
+## Prossimi passi — vedi PIANO OPERATIVO
+Piano corrente (Giulio, 2026-07-04): `docs/process/OPERATIONAL-PLAN.md`.
+- **Fase 0**: refactor architettura (shader modulari SOLID; matematica condivisa
+  Android/iOS via sorgente shader comune + prelude — NON C++, che è CPU-side;
+  registry material). Output visivo invariato.
+- **Fase 1**: rimuovere `liquidMetal` (Paper Design); `fluidGradient` come material.
+- **Fase 2**: metal 1:1 con la nuova ref (`metal-glass-target.png`: colori +
+  forma/moto) + nuovo material `glass` (gemma sfaccettata); poi water/iridescent.
+I passi tecnici già identificati (parametrizzazione rotazione/`roughness`/
+`transmission`/`ior`, iOS Metal, ottimizzazione HDRI, contact shadow/bloom) si
+inseriscono DENTRO queste fasi.
 
 ## Debito tecnico
 1. iOS: material orb assenti in Metal; `HybridNitroShaders.swift` non implementa
