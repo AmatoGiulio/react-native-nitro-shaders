@@ -60,15 +60,6 @@ Iterazione visuale successiva su screenshot Giulio `Screenshot_1783152612.png`:
 - Fix Kotlin Path: deformazione bordo dipende dalla densita' del material.
 - Verifiche passate: `bun run typecheck`, `bun test`, `./gradlew :app:assembleDebug`.
 
-Correzione concettuale successiva di Giulio:
-- La forma NON deve deformarsi: deve restare una sfera. L'energia vive dentro,
-  come acqua che bolle e spinge verso l'alto contro la pelle/materiale.
-- Fix implementato: Kotlin Path ora usa `addCircle` stabile; nessun wobble della
-  silhouette.
-- Lo shader aggiunge `upwardPressure()` e la usa per deformare normali,
-  riflessioni, caustiche e thin-film: movimento interno, non forma esterna.
-- Verifiche passate: `bun run typecheck`, `bun test`, `./gradlew :app:assembleDebug`.
-
 ## Architettura decisa (Giulio, 2026-07-03)
 - **Material** (5, piatti): `fluidGradient`, `liquidMetal`, `metal`, `water`,
   `iridescent`. Lo shader calcola solo il colore, mai la forma.
