@@ -1,61 +1,63 @@
 # HANDOFF
 
-Snapshot dello stato corrente. SOVRASCRITTO ad ogni fine sessione (lo storico è
-in `CHANGELOG.md`; il percorso degli orb è in `ORB_MATERIALS_JOURNEY.md`).
+Snapshot dello stato corrente. SOVRASCRITTO ad ogni fine sessione (lo storico è in
+`CHANGELOG.md`; il percorso degli orb in `ORB_MATERIALS_JOURNEY.md`; il piano in
+`OPERATIONAL-PLAN.md`).
 
 ## Regole vincolanti
-1. Gli agenti NON usano Argent / emulatori / simulatori / Metro (vedi CLAUDE.md).
-   Implementano, fanno `bun run typecheck`, `bun test`, `./gradlew assembleDebug`
-   (serve `ANDROID_HOME`). La validazione visiva su device la fa solo Giulio.
-2. Architettura pubblica: `docs/architecture/material-motion-skin.md`
-   (Material × Motion × Skin). Reference tecnico orb: `docs/engineering/orb-materials.md`.
-   Mappa doc: `docs/README.md`.
+1. Gli agenti NON usano Argent/emulatori/simulatori/Metro (CLAUDE.md). Implementano,
+   fanno `bun run typecheck`, `bun test`, `./gradlew :app:assembleDebug`
+   (serve `export ANDROID_HOME=$HOME/Library/Android/sdk`). La validazione visiva su
+   device la fa SOLO Giulio.
+2. Architettura pubblica: `docs/architecture/material-motion-skin.md` (Material ×
+   Motion × Skin). Reference tecnico orb: `docs/engineering/orb-materials.md`.
+   Condivisione cross-platform: `docs/engineering/cross-platform-shaders.md`.
+   Piano corrente: `docs/process/OPERATIONAL-PLAN.md`. Mappa doc: `docs/README.md`.
 
-## Stato attuale — TRAGUARDO ORB RAGGIUNTO (Android)
-I tre material orb (`metal`, `water`, `iridescent`) sono resi con un **mini-PBR +
-IBL**: riflettono/rifrangono un HDRI di studio reale (`assets/env/studio.png`,
-CC0 Poly Haven) e vivono in 3D (noise 3D sulla superficie sferica, rotazione su
-assi Y+X, bulge radiale). Validato visivamente da Giulio (2026-07-04). Dettaglio
-tecnico e trappole in `docs/engineering/orb-materials.md`; percorso in
-`docs/process/ORB_MATERIALS_JOURNEY.md`.
+## Stato attuale (2026-07-04)
+Engine orb = **mini-PBR + IBL** (riflette l'HDRI `assets/env/studio.png`) su sfera
+3D viva (noise 3D + rotazione). Material attuali: **`metal`, `water`, `iridescent`,
+`aura`** (4). Componente demo `MaterialOrb` (legacy) via registry.
 
-Componente demo attuale: `MaterialOrb` (legacy) con material `metal`/`water`/
-`iridescent`. Silhouette organica + ombra sono native (Kotlin). Solo Android; iOS
-orb non implementato.
+- **Fase 0 COMPLETATA + validata**: refactor SOLID. Kotlin `ShaderMaterial.kt`
+  (Strategy + registry al posto degli `if shader==`); TS `ORB_MATERIALS`
+  (Open/Closed). Output invariato (parità confermata da Giulio). Commit `ecc18cc`.
+- **Fase 1 COMPLETATA + validata**: rimossi `liquidMetal` (Paper) e `fluidGradient`
+  (componenti/impl/asset/reference); aggiunto material **`aura`** (mode 3 emissivo
+  neon). metal/water/iridescent invariati. Commit `251e757`.
+  - `aura`: prima versione OK (viola/magenta emissivo, flussi, core blu). Da
+    rifinire: il **rim deve andare verde (basso) ↔ magenta (alto/lati)**, ora è
+    cyan uniforme; manca il glow verde della ref `aura.webp`. Ritocco piccolo,
+    localizzato nel ramo `mode 3` di `material-orb.agsl`.
 
-## Architettura decisa (Giulio)
-- **Material** (5): `fluidGradient`, `liquidMetal`, `metal`, `water`, `iridescent`.
-- **Motion** ibrido: `none`/`flow`/`wobble`/`loop`, default per-material, opzionale.
-- **Skin** (target R2+): `MaterialView` / `MaterialText` / `MaterialSvg`. Oggi esiste
-  solo `MaterialOrb` (demo legacy) da migrare a `MaterialView`.
-- Struttura src target: `core/`, `materials/`, `motions/`, `skins/`.
+## Material definitivi (target 5)
+`metal`, `water`, `iridescent`, `aura` (fatti), **`glass`** (Fase 2, ref
+`references/materials/glass.webp` = chrome liquido scuro; la gemma rossa è artefatto).
 
-## Contratto (R1, completata)
-`src/materials/catalog.ts` (`MaterialName`), `src/motions/` (`Motion`,
-`resolveMotion`, `MOTION_DEFAULTS`), spec Nitro con 7 uniform `u_motion*`, override
-Kotlin storage-only, unit test `bun test` 6/6.
+## Prossimi passi (in ordine)
+1. **Rifinire `aura`**: rim verde↔magenta bipolare + un filo di bloom sul glow →
+   verso `aura.webp`. Solo il ramo mode 3 di `material-orb.agsl`.
+2. **Fase 2** (`OPERATIONAL-PLAN.md`):
+   a. **Forma condivisa**: adottare la forma/moto organico a onde larghe di
+      `glass.webp` come geometria/silhouette degli orb (Kotlin `buildMaterialOrbPath`
+      + relief). Oggi la forma è un cerchio con wobble leggero.
+   b. **metal**: prende la forma condivisa (di glass) con le proprietà material verso
+      `references/materials/metal.png` (argento cromato, rim iridescente).
+   c. **glass** (nuovo material, mode 4): chrome liquido scuro traslucido come
+      `glass.webp` (riflessi viola/blu, accenti rossi, highlight bianchi).
+   d. Poi rifinire `water`, `iridescent`, `aura`.
 
-## Prossimi passi — vedi PIANO OPERATIVO
-Piano corrente (Giulio, 2026-07-04): `docs/process/OPERATIONAL-PLAN.md`.
-- **Fase 0**: refactor architettura (shader modulari SOLID; matematica condivisa
-  Android/iOS via sorgente shader comune + prelude — NON C++, che è CPU-side;
-  registry material). Output visivo invariato.
-- **Fase 1**: rimuovere `liquidMetal` (Paper Design); `fluidGradient` come material.
-- **Fase 2**: metal 1:1 con la nuova ref (`metal-glass-target.png`: colori +
-  forma/moto) + nuovo material `glass` (gemma sfaccettata); poi water/iridescent.
-I passi tecnici già identificati (parametrizzazione rotazione/`roughness`/
-`transmission`/`ior`, iOS Metal, ottimizzazione HDRI, contact shadow/bloom) si
-inseriscono DENTRO queste fasi.
-
-## Debito tecnico
-1. iOS: material orb assenti in Metal; `HybridNitroShaders.swift` non implementa
-   nemmeno le prop orb esistenti né le 7 `u_motion*` (storage rimandato a iOS).
-   Debito default library Metal (fragment inline vs file `.metal`).
-2. Rename `packages/react-native-nitro-shaders` → `packages/nitro-shaders` (mai fatto).
-3. `MaterialOrb` è legacy: da sostituire con `MaterialView` in R2.
-4. Rotazione orb per-asse hardcoded nello shader (→ parametro).
-5. Peso HDRI da ottimizzare.
+## Debito tecnico dichiarato
+1. **Spec Nitro**: le prop di liquidMetal/fluid (shape, colorBack, repetition, scale,
+   warp, grain, ...) restano nel `nitro-shaders.nitro.ts` INUTILIZZATE. Pulizia
+   dedicata (rimuovere prop + rigenerare codegen) quando l'API material è stabile.
+2. **iOS**: material orb assenti in Metal; Swift non implementa le prop orb né le
+   `u_motion*`. Porting IBL + shared `.core` (vedi cross-platform-shaders.md).
+3. **Rotazione orb per-asse** hardcoded nello shader (`t*0.30`/`t*0.42`) → parametro.
+4. **HDRI** 382KB PNG → WebP/512×256 (~50-100KB) prima della pubblicazione.
+5. `MaterialOrb` è legacy → `MaterialView` (skin) in un R2 successivo; le tre Skin
+   (View/Text/Svg) non esistono ancora.
 
 ## Blocchi aperti
 - BLOCKED (Giulio): validazione visiva su device (DoD di ogni step visuale).
-- BLOCKED (Giulio/Mac): tutto iOS (orb, LiquidMetal, Fase 1-2).
+- BLOCKED (Giulio/Mac): tutto iOS.
