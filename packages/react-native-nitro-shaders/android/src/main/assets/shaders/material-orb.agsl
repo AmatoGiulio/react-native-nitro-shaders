@@ -83,6 +83,16 @@ float acousticWave(float2 p, float t, float density) {
     return low * 0.50 + mid * 0.32 + high * 0.18;
 }
 
+float upwardPressure(float2 p, float t, float density) {
+    float2 q = p;
+    q.y += 0.34;
+    float column = smoothstep(0.82, 0.02, abs(q.x + 0.16 * sin(q.y * 4.0 + t * 0.45)));
+    float rise = smoothstep(-0.88, 0.72, q.y);
+    float boil = fbm(q * mix(2.2, 4.0, 1.0 - density) + float2(0.0, -t * mix(0.55, 0.22, density)));
+    float pockets = smoothstep(0.48, 0.86, boil);
+    return (column * 0.55 + pockets * 0.45) * rise;
+}
+
 float envRibbon(float2 uv, float y, float width, float phase) {
     float curve = y + 0.075 * sin(uv.x * 8.0 + phase) + 0.035 * sin(uv.x * 17.0 - phase * 0.7);
     return smoothstep(width, 0.0, abs(uv.y - curve));
@@ -132,13 +142,24 @@ float materialDensity(float mode) {
 
 float3 normalAt(float2 p, float z, float t, float warp, float detail, float density) {
     float eps = 2.0 / min(u_resolution.x, u_resolution.y);
-    float h = heightField(p, t, detail) + acousticWave(p, t, density) * 0.22;
-    float hx = heightField(p + float2(eps, 0.0), t, detail) + acousticWave(p + float2(eps, 0.0), t, density) * 0.22 - h;
-    float hy = heightField(p + float2(0.0, eps), t, detail) + acousticWave(p + float2(0.0, eps), t, density) * 0.22 - h;
-    float bump = mix(0.85, 2.35, orbSaturate(warp)) * mix(1.22, 0.62, density);
+    float h =
+        heightField(p, t, detail) * 0.58 +
+        acousticWave(p, t, density) * 0.18 +
+        upwardPressure(p, t, density) * 0.52;
+    float hx =
+        heightField(p + float2(eps, 0.0), t, detail) * 0.58 +
+        acousticWave(p + float2(eps, 0.0), t, density) * 0.18 +
+        upwardPressure(p + float2(eps, 0.0), t, density) * 0.52 -
+        h;
+    float hy =
+        heightField(p + float2(0.0, eps), t, detail) * 0.58 +
+        acousticWave(p + float2(0.0, eps), t, density) * 0.18 +
+        upwardPressure(p + float2(0.0, eps), t, density) * 0.52 -
+        h;
+    float bump = mix(1.05, 2.60, orbSaturate(warp)) * mix(1.24, 0.68, density);
     float3 membrane = normalize(float3(-hx * bump, -hy * bump, 1.0));
     float3 sphere = normalize(float3(p.x, p.y, z));
-    return normalize(sphere + membrane * mix(0.28, 0.54, 1.0 - density));
+    return normalize(sphere + membrane * mix(0.34, 0.62, 1.0 - density));
 }
 
 half4 main(float2 fragCoord) {
@@ -173,7 +194,8 @@ half4 main(float2 fragCoord) {
     float3 R = reflect(-V, N);
     float ndv = orbSaturate(dot(N, V));
     float fresnel = pow(1.0 - ndv, 2.35);
-    float fold = heightField(p * 1.2, t, detail) + acousticWave(p, t, density) * 0.20;
+    float pressure = upwardPressure(p, t, density);
+    float fold = heightField(p * 1.2, t, detail) + acousticWave(p, t, density) * 0.20 + pressure * 0.42;
     float3 env = studioEnv(R, fold, density);
     float3 envSoft = studioEnv(reflect(-V, normalize(mix(baseN, N, 0.35))), fold + 0.23, density);
     float3 L = normalize(float3(-0.36, 0.58, 0.73));
@@ -183,7 +205,7 @@ half4 main(float2 fragCoord) {
 
     float3 color;
     if (mode < 0.5) {
-        float vein = smoothstep(0.38, 0.82, heightField(p * 1.38 + float2(0.0, t * 0.035), t, detail));
+        float vein = smoothstep(0.38, 0.82, heightField(p * 1.38 + float2(0.0, t * 0.035), t, detail) + pressure * 0.22);
         float3 chrome = pow(env, float3(0.92)) * 1.16;
         chrome = mix(chrome, envSoft, 0.28);
         chrome = mix(chrome, float3(0.035, 0.038, 0.043), vein * 0.24);
@@ -192,10 +214,11 @@ half4 main(float2 fragCoord) {
         float3 edgeColor = mix(float3(0.45, 0.22, 0.50), float3(0.30, 0.56, 0.34), orbSaturate(u_materialColor));
         color = chrome * mix(0.88, 1.12, volumeShade);
         color += float3(1.0) * spec * 0.78 + float3(0.80, 0.86, 0.92) * glint * 0.22;
+        color += envSoft * pressure * 0.24;
         color += edgeColor * fresnel * 0.22;
     } else if (mode < 1.5) {
         float internal = heightField(p * 1.70 + float2(t * 0.04, -t * 0.08), t, detail);
-        float caustic = smoothstep(0.56, 0.84, heightField(p * 2.75 + float2(-t * 0.06, t * 0.035), t, detail));
+        float caustic = smoothstep(0.46, 0.84, heightField(p * 2.75 + float2(-t * 0.06, t * 0.035), t, detail) + pressure * 0.36);
         float3 deep = float3(0.18, 0.44, 0.60);
         float3 milk = float3(0.66, 0.86, 0.94);
         float3 cyan = float3(0.42, 0.94, 1.0);
@@ -203,13 +226,13 @@ half4 main(float2 fragCoord) {
         float rim = pow(fresnel, 0.40);
         float spec = pow(orbSaturate(dot(N, H)), 84.0);
         color = mix(deep, milk, body) * volumeShade;
-        color += float3(0.36, 0.76, 0.92) * caustic * 0.22;
+        color += float3(0.36, 0.76, 0.92) * caustic * 0.34;
         color = mix(color, cyan, rim * 0.42);
         color += env * (0.16 + fresnel * 0.32);
         color += float3(1.0) * spec * 0.88;
     } else {
         float angle = atan(p.y, p.x);
-        float film = fresnel * 0.62 + fold * 0.18 + sin(angle * 1.65 + t * 0.10) * 0.045;
+        float film = fresnel * 0.62 + fold * 0.18 + pressure * 0.24 + sin(angle * 1.65 + t * 0.10) * 0.045;
         float3 rainbow = 0.58 + 0.42 * cos(6.28318 * (film + float3(0.04, 0.38, 0.72)));
         float3 pearl = float3(0.92, 0.88, 0.80) * mix(0.82, 1.08, z);
         pearl += float3(0.05, 0.030, 0.070) * (1.0 - ndv);

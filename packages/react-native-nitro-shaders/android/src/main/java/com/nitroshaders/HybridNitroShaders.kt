@@ -15,10 +15,7 @@ import android.view.View
 import androidx.annotation.Keep
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.uimanager.ThemedReactContext
-import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.sin
 
 @Keep
 @DoNotStrip
@@ -656,50 +653,18 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
     }
 
     private fun drawMaterialOrb(canvas: Canvas, w: Float, h: Float) {
-        val time = currentTimeSeconds()
-        buildMaterialOrbPath(w, h, time)
+        buildMaterialOrbPath(w, h)
         drawMaterialOrbShadow(canvas, w, h)
         canvas.drawPath(materialOrbPath, materialOrbPaint)
     }
 
-    private fun buildMaterialOrbPath(w: Float, h: Float, time: Float) {
+    private fun buildMaterialOrbPath(w: Float, h: Float) {
         val size = min(w, h)
         val radius = size * 0.405f
         val cx = w * 0.5f
         val cy = h * 0.5f
-        val wobbleAmount = resolvedMotionAmp().coerceIn(0f, 1.4f)
-        val warpAmount = resolvedMotionWarp().coerceIn(0f, 1.4f)
-        val speedAmount = resolvedMotionSpeed().coerceAtLeast(0.05f)
-        val density = materialOrbDensity()
-        val edgeAmp = (0.010f + 0.020f * wobbleAmount + 0.016f * warpAmount) * radius * (1.12f - density * 0.42f)
-        val phase = time * speedAmount
-        val points = 80
-
         materialOrbPath.reset()
-        for (i in 0 until points) {
-            val a = (i.toDouble() / points.toDouble() * PI * 2.0).toFloat()
-            val wave =
-                sin(a * (2.0f + density) + phase * (0.70f - density * 0.24f)) * 0.44f +
-                sin(a * (3.0f + density * 1.7f) - phase * (0.58f - density * 0.18f) + 1.2f) * 0.34f +
-                sin(a * (5.0f + density * 2.0f) + phase * (0.30f + density * 0.08f) + 2.1f) * 0.22f
-            val r = radius + edgeAmp * wave
-            val x = cx + cos(a) * r
-            val y = cy + sin(a) * r
-            if (i == 0) {
-                materialOrbPath.moveTo(x, y)
-            } else {
-                materialOrbPath.lineTo(x, y)
-            }
-        }
-        materialOrbPath.close()
-    }
-
-    private fun materialOrbDensity(): Float {
-        return when {
-            orbMaterial < 0.5 -> 0.92f
-            orbMaterial < 1.5 -> 0.45f
-            else -> 0.62f
-        }
+        materialOrbPath.addCircle(cx, cy, radius, Path.Direction.CW)
     }
 
     private fun drawMaterialOrbShadow(canvas: Canvas, w: Float, h: Float) {
