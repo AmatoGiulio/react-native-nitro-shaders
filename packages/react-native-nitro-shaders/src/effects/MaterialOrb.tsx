@@ -1,7 +1,7 @@
 import React from 'react'
 import { ShaderSurface, type ShaderSurfaceProps } from '../core/ShaderSurface'
 import {
-  MATERIAL_ORB_PRESETS,
+  ORB_MATERIALS,
   type MaterialOrbMaterial,
 } from '../materials/material-orb'
 import { resolveMotion, type Motion } from '../motions'
@@ -22,7 +22,8 @@ export type MaterialOrbProps = {
 
 export function MaterialOrb(props: MaterialOrbProps) {
   const material = props.material ?? 'metal'
-  const preset = MATERIAL_ORB_PRESETS[material]
+  const definition = ORB_MATERIALS[material]
+  const { preset } = definition
   const baseMotion = resolveMotion(props.motion, material)
   const resolvedMotion =
     props.motion === undefined
@@ -51,7 +52,7 @@ export function MaterialOrb(props: MaterialOrbProps) {
       shader="materialOrb"
       color="#000000"
       colors={[]}
-      orbMaterial={preset.orbMaterial}
+      orbMaterial={definition.orbMaterial}
       speed={speed}
       wobble={wobble}
       distortion={distortion}

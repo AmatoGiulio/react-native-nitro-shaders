@@ -72,6 +72,16 @@ assets/shaders/
   (aggiungere un material = aggiungere un file, senza toccare il core); `skins/`
   (R2) separati dai material; `motions/` già ok.
 
+### Scope effettivo in esecuzione (deciso dall'orchestratore)
+Per non rischiare la parità visiva alla cieca, la Fase 0 fa il refactor SOLID
+**senza toccare la logica degli shader**:
+- **TS**: registry material Open/Closed (`ORB_MATERIALS`), un'entry per material.
+- **Kotlin**: `ShaderMaterial` Strategy + registry, al posto dei branch `if shader==`.
+- **Strategia condivisione cross-platform**: documentata in
+  `../engineering/cross-platform-shaders.md`. La modularizzazione fisica degli shader
+  in file `.core` + adapter I/O si fa **insieme al porting iOS** (unico secondo
+  consumatore); farla ora senza iOS = infrastruttura senza consumatore.
+
 ### DoD Fase 0
 Refactor a **output visivo identico** (nessuna regressione), `bun run typecheck`,
 `bun test`, `assembleDebug` verdi, e Giulio conferma che i tre orb rendono come

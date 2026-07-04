@@ -1,27 +1,13 @@
 package com.margelo.nitro.nitroshaders
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.RadialGradient
-import android.graphics.RuntimeShader
-import android.graphics.Shader
-import android.os.Build
 import android.view.Choreographer
 import android.view.View
 import androidx.annotation.Keep
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.uimanager.ThemedReactContext
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.min
-import kotlin.math.sin
 
 @Keep
 @DoNotStrip
@@ -288,7 +274,7 @@ class HybridNitroShaders(val context: ThemedReactContext): HybridNitroShadersSpe
         }
 }
 
-private class ShaderSurfaceView(context: Context): View(context), Choreographer.FrameCallback {
+internal class ShaderSurfaceView(context: Context): View(context), Choreographer.FrameCallback {
     var color: String = "#000000"
         set(value) {
             field = value
@@ -484,104 +470,24 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
             invalidate()
         }
 
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val fluidPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val appContext = context.applicationContext
-    private var parsedColor = Color.BLACK
-    private var parsedColors: FloatArray = FloatArray(0)
+    internal val appContext = context.applicationContext
+    internal var parsedColor = Color.BLACK
+        private set
+    internal var parsedColors: FloatArray = FloatArray(0)
+        private set
     private var frameCallbackPosted = false
     private val startTimeNanos = System.nanoTime()
 
-    private var fluidShaderInit = false
-    private var fluidRuntimeShader: RuntimeShader? = null
-
-    private var solidShaderInit = false
-    private var solidRuntimeShader: RuntimeShader? = null
-
-    private val liquidMetalPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var liquidMetalShaderInit = false
-    private var liquidMetalRuntimeShader: RuntimeShader? = null
-
-    private val materialOrbPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val materialOrbShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val materialOrbPath = Path()
-    private var materialOrbShaderInit = false
-    private var materialOrbRuntimeShader: RuntimeShader? = null
-
-    // Studio environment (equirectangular HDRI) reflected/refracted by the material.
-    private var envInit = false
-    private var envBitmap: Bitmap? = null
-    private var envShader: BitmapShader? = null
-
-    private fun ensureMaterialOrbEnv() {
-        if (envInit) {
-            return
-        }
-        envInit = true
-        val bmp = try {
-            appContext.assets.open("env/studio.png").use { BitmapFactory.decodeStream(it) }
-        } catch (e: Exception) {
-            null
-        }
-        val safe = bmp ?: Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also {
-            it.eraseColor(Color.rgb(128, 130, 134))
-        }
-        envBitmap = safe
-        envShader = BitmapShader(safe, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
-    }
-
-    private fun materialOrbShader(): RuntimeShader? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            return null
-        }
-        if (!materialOrbShaderInit) {
-            materialOrbShaderInit = true
-            val source = appContext.assets.open("shaders/material-orb.agsl")
-                .bufferedReader().use { it.readText() }
-            materialOrbRuntimeShader = RuntimeShader(source).also { materialOrbPaint.shader = it }
-        }
-        return materialOrbRuntimeShader
-    }
-
-    private fun liquidMetalShader(): RuntimeShader? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            return null
-        }
-        if (!liquidMetalShaderInit) {
-            liquidMetalShaderInit = true
-            val source = appContext.assets.open("shaders/liquid-metal.agsl")
-                .bufferedReader().use { it.readText() }
-            liquidMetalRuntimeShader = RuntimeShader(source).also { liquidMetalPaint.shader = it }
-        }
-        return liquidMetalRuntimeShader
-    }
-
-    private fun fluidShader(): RuntimeShader? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            return null
-        }
-        if (!fluidShaderInit) {
-            fluidShaderInit = true
-            val source = appContext.assets.open("shaders/fluid-gradient.agsl")
-                .bufferedReader().use { it.readText() }
-            fluidRuntimeShader = RuntimeShader(source).also { fluidPaint.shader = it }
-        }
-        return fluidRuntimeShader
-    }
-
-    private fun solidShader(): RuntimeShader? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            return null
-        }
-        if (!solidShaderInit) {
-            solidShaderInit = true
-            val source = appContext.assets.open("shaders/shared-surface.agsl")
-                .bufferedReader().use { it.readText() }
-            solidRuntimeShader = RuntimeShader(source).also { paint.shader = it }
-        }
-        return solidRuntimeShader
-    }
+    // Registry of shader materials (Strategy pattern). onDraw looks up the active
+    // material by [shader] name and delegates rendering to it; unknown names fall
+    // back to the default "solid" material.
+    private val solidMaterial: ShaderMaterial = SolidMaterial()
+    private val materials: Map<String, ShaderMaterial> = listOf(
+        MaterialOrbMaterial(),
+        LiquidMetalMaterial(),
+        FluidGradientMaterial(),
+        solidMaterial
+    ).associateBy { it.name }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -598,269 +504,32 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
         val w = width.toFloat()
         val h = height.toFloat()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (shader == "materialOrb") {
-                val materialOrb = materialOrbShader()
-                if (materialOrb != null) {
-                    setMaterialOrbUniforms(materialOrb, w, h)
-                    drawMaterialOrb(canvas, w, h)
-                    return
-                }
-            } else if (shader == "liquidMetal") {
-                val liquidMetal = liquidMetalShader()
-                if (liquidMetal != null) {
-                    setLiquidMetalUniforms(liquidMetal, w, h)
-                    // drawPaint fills the whole device clip when the parent disables
-                    // child clipping (RN default) — draw an explicit rect instead.
-                    canvas.drawRect(0f, 0f, w, h, liquidMetalPaint)
-                    return
-                }
-            } else if (shader == "fluidGradient") {
-                val fluid = fluidShader()
-                if (fluid != null) {
-                    setFluidUniforms(fluid, w, h)
-                    // drawPaint fills the whole device clip when the parent disables
-                    // child clipping (RN default) — draw an explicit rect instead.
-                    canvas.drawRect(0f, 0f, w, h, fluidPaint)
-                    return
-                }
-            } else {
-                val shader = solidShader()
-                if (shader != null) {
-                    shader.setFloatUniform("u_color", red(), green(), blue(), alpha())
-                    shader.setFloatUniform("u_time", currentTimeSeconds())
-                    // drawPaint fills the whole device clip when the parent disables
-                    // child clipping (RN default) — draw an explicit rect instead.
-                    canvas.drawRect(0f, 0f, w, h, paint)
-                    return
-                }
-            }
-        }
-
-        if (shader == "materialOrb") {
-            fallbackPaint.color = Color.TRANSPARENT
-            canvas.drawRect(0f, 0f, w, h, fallbackPaint)
-            return
-        }
-
-        if (shader == "liquidMetal") {
-            // API < 33 fallback: flat fill with the background color.
-            fallbackPaint.color = parseColor(colorBack)
-            canvas.drawRect(0f, 0f, w, h, fallbackPaint)
-            return
-        }
-
-        if (shader == "fluidGradient") {
-            // API < 33 fallback: static vertical LinearGradient from the palette.
-            fallbackPaint.shader = fluidFallbackGradient(w, h)
-            canvas.drawRect(0f, 0f, w, h, fallbackPaint)
-            fallbackPaint.shader = null
-            return
-        }
-
-        fallbackPaint.color = parsedColor
-        canvas.drawRect(0f, 0f, w, h, fallbackPaint)
-    }
-
-    private fun setMaterialOrbUniforms(materialOrb: RuntimeShader, w: Float, h: Float) {
-        ensureMaterialOrbEnv()
-        envShader?.let { materialOrb.setInputShader("u_env", it) }
-        envBitmap?.let { materialOrb.setFloatUniform("u_envSize", it.width.toFloat(), it.height.toFloat()) }
-        materialOrb.setFloatUniform("u_time", currentTimeSeconds())
-        materialOrb.setFloatUniform("u_speed", speed.toFloat())
-        materialOrb.setFloatUniform("u_resolution", w, h)
-        materialOrb.setFloatUniform("u_orbMaterial", orbMaterial.toFloat())
-        materialOrb.setFloatUniform("u_wobble", wobble.toFloat())
-        materialOrb.setFloatUniform("u_distortion", distortion.toFloat())
-        materialOrb.setFloatUniform("u_detail", detail.toFloat())
-        materialOrb.setFloatUniform("u_materialColor", materialColor.toFloat())
-        materialOrb.setFloatUniform("u_motionType", resolvedMotionType())
-        materialOrb.setFloatUniform("u_motionSpeed", resolvedMotionSpeed())
-        materialOrb.setFloatUniform("u_motionAmp", resolvedMotionAmp())
-        materialOrb.setFloatUniform("u_motionWarp", resolvedMotionWarp())
-        materialOrb.setFloatUniform("u_motionDetail", resolvedMotionDetail())
-        materialOrb.setFloatUniform("u_motionSeed", motionSeed.toFloat())
-        materialOrb.setFloatUniform("u_motionPeriod", motionPeriod.toFloat())
-    }
-
-    private fun drawMaterialOrb(canvas: Canvas, w: Float, h: Float) {
-        val time = currentTimeSeconds()
-        buildMaterialOrbPath(w, h, time)
-        drawMaterialOrbShadow(canvas, w, h)
-        canvas.drawPath(materialOrbPath, materialOrbPaint)
-    }
-
-    private fun buildMaterialOrbPath(w: Float, h: Float, time: Float) {
-        val size = min(w, h)
-        val radius = size * 0.405f
-        val cx = w * 0.5f
-        val cy = h * 0.5f
-        val wobbleAmount = resolvedMotionAmp().coerceIn(0f, 1.4f)
-        val warpAmount = resolvedMotionWarp().coerceIn(0f, 1.4f)
-        val speedAmount = resolvedMotionSpeed().coerceAtLeast(0.05f)
-        val density = materialOrbDensity()
-        val edgeAmp = (0.010f + 0.020f * wobbleAmount + 0.016f * warpAmount) * radius * (1.12f - density * 0.42f)
-        val phase = time * speedAmount
-        val points = 80
-
-        materialOrbPath.reset()
-        for (i in 0 until points) {
-            val a = (i.toDouble() / points.toDouble() * PI * 2.0).toFloat()
-            val wave =
-                sin(a * (2.0f + density) + phase * (0.70f - density * 0.24f)) * 0.44f +
-                sin(a * (3.0f + density * 1.7f) - phase * (0.58f - density * 0.18f) + 1.2f) * 0.34f +
-                sin(a * (5.0f + density * 2.0f) + phase * (0.30f + density * 0.08f) + 2.1f) * 0.22f
-            val r = radius + edgeAmp * wave
-            val x = cx + cos(a) * r
-            val y = cy + sin(a) * r
-            if (i == 0) {
-                materialOrbPath.moveTo(x, y)
-            } else {
-                materialOrbPath.lineTo(x, y)
-            }
-        }
-        materialOrbPath.close()
-    }
-
-    private fun materialOrbDensity(): Float {
-        return when {
-            orbMaterial < 0.5 -> 0.92f
-            orbMaterial < 1.5 -> 0.45f
-            else -> 0.62f
+        val material = materials[shader] ?: solidMaterial
+        if (material.isAvailable()) {
+            material.draw(canvas, this, w, h)
+        } else {
+            material.drawFallback(canvas, this, w, h)
         }
     }
 
-    private fun drawMaterialOrbShadow(canvas: Canvas, w: Float, h: Float) {
-        val size = min(w, h)
-        val radius = size * 0.405f
-        val cx = w * 0.5f
-        val cy = h * 0.5f
-        val shadowCx = cx
-        val shadowCy = cy + radius * 0.84f
-        val shadowRx = radius * 0.74f
-        val shadowRy = radius * 0.13f
-        val strength = when {
-            orbMaterial < 0.5 -> 54
-            orbMaterial < 1.5 -> 36
-            else -> 42
-        }
-
-        materialOrbShadowPaint.shader = RadialGradient(
-            shadowCx,
-            shadowCy,
-            shadowRx,
-            intArrayOf(Color.argb(strength, 0, 0, 0), Color.argb(0, 0, 0, 0)),
-            floatArrayOf(0.0f, 1.0f),
-            Shader.TileMode.CLAMP
-        )
-        canvas.save()
-        canvas.scale(1.0f, shadowRy / shadowRx, shadowCx, shadowCy)
-        canvas.drawCircle(shadowCx, shadowCy, shadowRx, materialOrbShadowPaint)
-        canvas.restore()
-        materialOrbShadowPaint.shader = null
-    }
-
-    private fun resolvedMotionType(): Float {
+    internal fun resolvedMotionType(): Float {
         return if (motionType > 0.0) motionType.toFloat() else 2.0f
     }
 
-    private fun resolvedMotionSpeed(): Float {
+    internal fun resolvedMotionSpeed(): Float {
         return if (motionSpeed > 0.0) motionSpeed.toFloat() else speed.toFloat()
     }
 
-    private fun resolvedMotionAmp(): Float {
+    internal fun resolvedMotionAmp(): Float {
         return if (motionAmp > 0.0) motionAmp.toFloat() else wobble.toFloat()
     }
 
-    private fun resolvedMotionWarp(): Float {
+    internal fun resolvedMotionWarp(): Float {
         return if (motionWarp > 0.0) motionWarp.toFloat() else distortion.toFloat()
     }
 
-    private fun resolvedMotionDetail(): Float {
+    internal fun resolvedMotionDetail(): Float {
         return if (motionDetail > 0.0) motionDetail.toFloat() else detail.toFloat()
-    }
-
-    private fun setLiquidMetalUniforms(liquidMetal: RuntimeShader, w: Float, h: Float) {
-        liquidMetal.setFloatUniform("u_time", currentTimeSeconds())
-        liquidMetal.setFloatUniform("u_speed", speed.toFloat())
-        liquidMetal.setFloatUniform("u_resolution", w, h)
-
-        val back = parseColor(colorBack)
-        liquidMetal.setFloatUniform(
-            "u_colorBack",
-            Color.red(back) / 255f,
-            Color.green(back) / 255f,
-            Color.blue(back) / 255f,
-            Color.alpha(back) / 255f
-        )
-        val tint = parseColor(colorTint)
-        liquidMetal.setFloatUniform(
-            "u_colorTint",
-            Color.red(tint) / 255f,
-            Color.green(tint) / 255f,
-            Color.blue(tint) / 255f,
-            Color.alpha(tint) / 255f
-        )
-
-        liquidMetal.setFloatUniform("u_repetition", repetition.toFloat())
-        liquidMetal.setFloatUniform("u_softness", softness.toFloat())
-        liquidMetal.setFloatUniform("u_shiftRed", shiftRed.toFloat())
-        liquidMetal.setFloatUniform("u_shiftBlue", shiftBlue.toFloat())
-        liquidMetal.setFloatUniform("u_distortion", distortion.toFloat())
-        liquidMetal.setFloatUniform("u_contour", contour.toFloat())
-        liquidMetal.setFloatUniform("u_angle", angle.toFloat())
-        liquidMetal.setFloatUniform("u_shape", shapeToFloat(shape))
-        liquidMetal.setFloatUniform("u_grain", grain.toFloat())
-    }
-
-    private fun shapeToFloat(shape: String): Float {
-        return when (shape) {
-            "none" -> 0.0f
-            "circle" -> 1.0f
-            "daisy" -> 2.0f
-            "diamond" -> 3.0f
-            "metaballs" -> 4.0f
-            else -> 1.0f
-        }
-    }
-
-    private fun setFluidUniforms(fluid: RuntimeShader, w: Float, h: Float) {
-        fluid.setFloatUniform("u_time", currentTimeSeconds())
-        fluid.setFloatUniform("u_speed", speed.toFloat())
-        fluid.setFloatUniform("u_scale", scale.toFloat())
-        fluid.setFloatUniform("u_warp", warp.toFloat())
-        fluid.setFloatUniform("u_intensity", intensity.toFloat())
-        fluid.setFloatUniform("u_grain", grain.toFloat())
-        fluid.setFloatUniform("u_resolution", w, h)
-
-        val count = parsedColors.size / 3
-        fluid.setFloatUniform("u_colorCount", count.coerceAtLeast(1).toFloat())
-        // u_colors is a fixed vec3[6]; fill unused slots with black.
-        val flat = FloatArray(18)
-        System.arraycopy(parsedColors, 0, flat, 0, parsedColors.size.coerceAtMost(18))
-        fluid.setFloatUniform("u_colors", flat)
-    }
-
-    private fun fluidFallbackGradient(w: Float, h: Float): LinearGradient {
-        val count = parsedColors.size / 3
-        val ints = if (count == 0) {
-            intArrayOf(Color.BLACK, Color.BLACK)
-        } else if (count == 1) {
-            val c = colorFromParsed(0)
-            intArrayOf(c, c)
-        } else {
-            IntArray(count) { colorFromParsed(it) }
-        }
-        return LinearGradient(0f, 0f, 0f, h, ints, null, Shader.TileMode.CLAMP)
-    }
-
-    private fun colorFromParsed(i: Int): Int {
-        val o = i * 3
-        return Color.rgb(
-            (parsedColors[o] * 255f).toInt(),
-            (parsedColors[o + 1] * 255f).toInt(),
-            (parsedColors[o + 2] * 255f).toInt()
-        )
     }
 
     override fun doFrame(frameTimeNanos: Long) {
@@ -887,7 +556,7 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
         }
     }
 
-    private fun currentTimeSeconds(): Float {
+    internal fun currentTimeSeconds(): Float {
         if (debugTime >= 0) {
             return debugTime.toFloat()
         }
@@ -895,7 +564,7 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
         return ((System.nanoTime() - startTimeNanos).toDouble() / 1_000_000_000.0).toFloat()
     }
 
-    private fun parseColor(value: String): Int {
+    internal fun parseColor(value: String): Int {
         return try {
             Color.parseColor(value)
         } catch (_: IllegalArgumentException) {
@@ -916,9 +585,9 @@ private class ShaderSurfaceView(context: Context): View(context), Choreographer.
         return out
     }
 
-    private fun red(): Float = Color.red(parsedColor) / 255f
-    private fun green(): Float = Color.green(parsedColor) / 255f
-    private fun blue(): Float = Color.blue(parsedColor) / 255f
-    private fun alpha(): Float = Color.alpha(parsedColor) / 255f
+    internal fun red(): Float = Color.red(parsedColor) / 255f
+    internal fun green(): Float = Color.green(parsedColor) / 255f
+    internal fun blue(): Float = Color.blue(parsedColor) / 255f
+    internal fun alpha(): Float = Color.alpha(parsedColor) / 255f
 
 }

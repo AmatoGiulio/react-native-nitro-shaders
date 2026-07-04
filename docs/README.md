@@ -18,6 +18,7 @@ appartiene a più sezioni, vive in una sola ed è linkata dalle altre.
 ### engineering
 - [shader-techniques.md](engineering/shader-techniques.md) — matematica shader (noise/fBm, superficie metallica), AGSL vs Metal, masking skin, runtime rules.
 - [orb-materials.md](engineering/orb-materials.md) — engine dei tre material orb (`metal`/`water`/`iridescent`): mini-PBR + IBL (riflette un HDRI di studio reale), superficie 3D viva, preset PBR.
+- [cross-platform-shaders.md](engineering/cross-platform-shaders.md) — strategia per condividere la matematica shader Android(AGSL)↔iOS(Metal) senza duplicare (no C++, no transpiler).
 
 ### process
 - [STACK.md](process/STACK.md) — stack, struttura repo, convenzioni, roadmap.
