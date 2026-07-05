@@ -113,10 +113,17 @@ float relief3(float3 sp, float detail) {
     return fbm3(q + (w - 0.5) * 1.1);
 }
 
-// Relief sampled in a domain that rotates over time → the skin orbits on all axes.
+// Relief evolution (J reference): folds MORPH in place — they stretch, merge and
+// dissolve where they are — instead of sliding around like a rotating globe.
+// A slow residual rotation keeps 3D life; the Lissajous domain offset does the morph.
 float reliefRot(float3 viewPos, float t, float detail) {
-    float3 sp = rotate3(viewPos, t * 0.30 + u_motionSeed, t * 0.42);
-    return relief3(sp, detail);
+    float3 sp = rotate3(viewPos, t * 0.10 + u_motionSeed, t * 0.14);
+    float3 morph = float3(
+        sin(t * 0.21),
+        sin(t * 0.17 + 2.1),
+        sin(t * 0.13 + 4.2)
+    ) * 0.55;
+    return relief3(sp + morph, detail);
 }
 
 // Perturb the sphere normal in 3D: tangential folds + a radial "push from inside".
@@ -196,10 +203,19 @@ half4 main(float2 fragCoord) {
     float z = sqrt(max(0.0, 1.0 - dd));
     float3 sp = float3(p.x, p.y, z);           // point on the 3D sphere surface
     float3 baseN = normalize(sp);
-    // Metal reads best with broader, lower-frequency waves than the other materials.
-    float shapeDetail = detail;
-    if (mode < 0.5) { shapeDetail *= 0.35; }
-    float3 N = perturbNormal3(sp, baseN, t, warp, shapeDetail, amp);
+    float3 N = perturbNormal3(sp, baseN, t, warp, detail, amp);
+
+    // Rim-fold coupling: bend N by the gradient of the silhouette height field so
+    // each border indentation continues inward as a crease (matches native Path).
+    float density = (mode < 0.5) ? 0.92 : ((mode < 1.5) ? 0.45 : 0.62);
+    float rphase = t;
+    float e2 = 0.02;
+    float hC = rimFoldHeight(p, rphase, amp, warp, density);
+    float hX = rimFoldHeight(p + float2(e2, 0.0), rphase, amp, warp, density) - hC;
+    float hY = rimFoldHeight(p + float2(0.0, e2), rphase, amp, warp, density) - hC;
+    float3 rimGrad = float3(hX, hY, 0.0) / e2;
+    float3 rimTang = rimGrad - dot(rimGrad, baseN) * baseN;
+    N = normalize(N - rimTang * 3.2);
 
     float3 V = float3(0.0, 0.0, 1.0);
     float ndv = sat(dot(N, V));
@@ -209,9 +225,11 @@ half4 main(float2 fragCoord) {
 
     if (mode < 0.5) {
         // ===== METAL — metallic Principled BSDF, mirror IBL =====
-        // ===== METAL — metallic Principled BSDF, mirror IBL =====
         float3 baseTint = mix(float3(0.95, 0.96, 0.98), float3(1.02, 0.98, 0.92), warm);
         float3 spec = sampleEnvSoft(R, 0.10 + 0.15 * warp);
+        // Shadow lift via screen blend: raises the black "lakes" toward graphite
+        // while PRESERVING the gradients inside them (a hard floor flattens the
+        // darks into matte gray and kills the gloss).
         float3 F = mix(baseTint * 0.85, float3(1.0), pow(1.0 - ndv, 5.0));
         color = spec * F;
         float3 irid = 0.5 + 0.5 * cos(6.2831 * (pow(1.0 - ndv, 3.0) * 1.4 + float3(0.0, 0.33, 0.67)));
