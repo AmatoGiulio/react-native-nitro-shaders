@@ -133,3 +133,105 @@ Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a f
 - Doc riallineate al traguardo: EDD `orb-materials.md` riscritto per IBL (rimosso l'env procedurale morto); nuovo `ORB_MATERIALS_JOURNEY.md` (post-mortem dei tentativi + cosa ha fatto il salto); HANDOFF ripulito a snapshot; README/indice aggiornati; memoria `reference-are-hdri-reflective`.
 - Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
 - Prossimo: parametrizzazione (rotazione per-asse, roughness/transmission/ior), poi cleanup R2 (MaterialView) e iOS Metal.
+
+## [2026-07-04] - Aura refine - Rim verde/magenta
+- Ricevuto screenshot Giulio con `aura` ancora troppo magenta/cyan e senza separazione chiara del rim verde.
+- Ritocco localizzato nel solo ramo `aura` (mode 3) di `material-orb.agsl`: ridotte leggermente le stream rosa, rim reso stabile su coordinate sferiche (`p.y`) invece della normale perturbata, aggiunto glow interno verde su basso/top e magenta sui lati.
+- Nessuna modifica a metal/water/iridescent, Kotlin, TS, spec Nitro o demo.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- Validazione visuale runtime resta a Giulio.
+
+## [2026-07-04] - Aura refine - Gas lento e rim animato
+- Feedback Giulio: movimento `aura` troppo nervoso; le macchie devono fondersi lentamente come gas densi; il neon verde al bordo deve ruotare/muoversi.
+- Preset `aura` abbassato in `material-orb.ts`: speed/wobble/distortion/detail ridotti per rendere motion e silhouette piu' dolci.
+- Branch `aura` in `material-orb.agsl`: dominio colore passato a noise largo e lento, stream rosa trasformate in glow morbido, rim verde calcolato in un dominio sferico rotante (`rimSp`) con variazione `rimFlow`.
+- Nessuna modifica a metal/water/iridescent, Kotlin, spec Nitro o demo.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- Validazione visuale runtime resta a Giulio.
+
+## [2026-07-04] - Aura refine - Superficie perlata e gradienti
+- Feedback Giulio: superficie ancora troppo ruvida; deve diventare piu' liscia/perlata, con macchie colore piu' gradienti come la ref.
+- Preset `aura` ulteriormente ammorbidito in `material-orb.ts`: speed/wobble/distortion/detail ridotti.
+- Branch `aura` in `material-orb.agsl`: normale visiva miscelata verso la normale sferica (`auraN`) per ridurre rilievo percepito; campi colore a frequenza ancora piu' bassa; transizioni indigo/violet/magenta/pink allargate; aggiunto velo `pearl` e bloom interno morbido al posto di vene nette.
+- Nessuna modifica a metal/water/iridescent, Kotlin, spec Nitro o demo.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- Validazione visuale runtime resta a Giulio.
+
+## [2026-07-04] - Aura research reset - Procedural PBR gel
+- Feedback Giulio: i pass precedenti erano fuori strada; richiesta ricerca online e reference BlenderKit specifica.
+- Ricerca: asset BlendKit `Symbiote With Aura Power` = materiale procedurale sci-fi per Eevee/Cycles, tag Symbiote/Organic/Alien/Power/Energy; modello corretto = material PBR procedurale, non gradiente emissivo piatto. Riferimenti tecnici: Noise/ColorRamp per maschere larghe, Fresnel/Layer Weight per mixing/rim.
+- Branch `aura` in `material-orb.agsl` riscritto come gel organico traslucido: normale smooth, riflessione/trasmissione HDRI (`sampleEnvSoft` + `refract`), lobi interni grandi tipo ColorRamp, thin-film leggero, rim emissivo verde/magenta animato via Fresnel.
+- Preset `aura` resta lento/morbido in `material-orb.ts`.
+- Nessuna modifica a metal/water/iridescent, Kotlin, spec Nitro o demo.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- Validazione visuale runtime resta a Giulio.
+
+## [2026-07-04] - Aura refine - Lobi reference-driven
+- Feedback screenshot Giulio: la resa era ancora un gradiente sferico; mancavano i lobi riconoscibili della reference BlendKit.
+- Branch `aura` in `material-orb.agsl`: maschere colore spostate su coordinate sferiche visibili (`p`) invece del dominio noise compresso; aggiunti tre lobi principali (foglia magenta alto-sinistra, massa rosa destra, massa bassa), valle blu centrale/ribbon, rim verde piu' forte top/basso, rim magenta laterale e due highlight perlati.
+- Nessuna modifica a metal/water/iridescent, Kotlin, spec Nitro o demo.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- Validazione visuale runtime resta a Giulio.
+
+## [2026-07-04] - Aura refine - Asimmetria, profondita' e motion
+- Feedback screenshot Giulio: resa ancora troppo simmetrica, quasi ferma, piatta e non percepita come 3D.
+- Branch `aura` in `material-orb.agsl`: aggiunto helper `capsuleMask` e sostituite le ellissi statiche con maschere capsule organiche in dominio sferico 3D rotante (`wp/gp` + drift/fBm), cosi' foglia, massa destra, massa bassa, valle blu e highlight non restano ancorati a pattern speculari.
+- Aumentata la lettura PBR/depth del gel: normale aura miscelata con la normale base per mantenere superficie liscia, ma riflessione/trasmissione HDRI piu' presenti, `depthShade` legato a `z`, thin-film sul bordo e rim verde/magenta animato via dominio `rimSp`.
+- Preset `aura` in `material-orb.ts` ritoccato a `speed: 0.72`, `wobble: 0.28`, `distortion: 0.24`, `detail: 0.58` per rendere visibile il movimento senza tornare nervoso.
+- Nessuna modifica a metal/water/iridescent, Kotlin, spec Nitro o demo.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- Validazione visuale runtime resta a Giulio.
+
+## [2026-07-04] - Aura refine - Identita' viva e meno bianco
+- Feedback screenshot Giulio: molto meglio, ma i bordi avevano ancora troppo bianco e il materiale risultava finto, con colori troppo separati invece che in collisione organica.
+- Branch `aura` in `material-orb.agsl`: riflesso HDRI reso piu' rough e tinto dal colore interno (`coloredRefl`) invece di sommare luce bianca pura; ridotta l'energia del rim e degli highlight speculari bianchi.
+- Aggiunta maschera `collision` tra zone magenta e blu: dove i colori si incontrano vengono compressi/sporcati verso viola profondo, con leggera densita' scura, per dare una fusione piu' materica e meno digitale.
+- Introdotto `greenBody` per far contaminare il corpo/rim con verde-ciano in modo piu' organico; ridotta saturazione/opacita' del blocco blu e del `pearlVeil`.
+- Nessuna modifica a metal/water/iridescent, Kotlin, spec Nitro o demo.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- Validazione visuale runtime resta a Giulio.
+
+## [2026-07-04] - Aura refine - Specifica cellula/biglia liquida
+- Giulio ha fornito analisi millimetrica della reference: sfera semi-trasparente tipo biglia/cellula, nucleo indaco profondo, due masse rosa fluide che orbitano/collidono, bordo Fresnel verde in basso e magenta sui lati/top, riflessi glaze controllati, doppia membrana sottile e glint centrale.
+- Branch `aura` in `material-orb.agsl`: sostituita la distribuzione precedente con dominio `orbit` lento; introdotte due masse principali `leftMass`/`rightMass`, veli superiori/inferiori, nucleo `coreWell`, collisione magenta/blu e palette piu' profonda (`deepBlue` meno chiaro).
+- Aggiunti `membraneInner`/`membraneOuter` per il doppio bordo trasparente, `coreGlow`/`coreGlint` per il piccolo punto centrale, e speculari glaze sottili tinti azzurro/rosa invece di bordi bianchi larghi.
+- Nessuna modifica a metal/water/iridescent, Kotlin, spec Nitro o demo.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- Validazione visuale runtime resta a Giulio.
+
+## [2026-07-04] - Aura refine - Perlata opaca edge-lit
+- Feedback Giulio: rimuovere la piccola lucina interna; i colori devono essere piu' opachi e illuminarsi soprattutto ai bordi; riflessioni perlate/opache, non lucide.
+- Branch `aura` in `material-orb.agsl`: rimosso `coreGlint`, eliminate le speculari interne `leftSpec`/`rightSpec` e l'`envSpark` glossy; il core resta solo un bagliore blu molto attenuato.
+- Riflesso HDRI reso ancora piu' rough (`sampleEnvSoft` piu' alto) e molto meno pesante nel mix; il corpo ora privilegia colore interno opaco e assorbimento, con damping centrale (`edgeLight`) e wash perlato solo sul bordo.
+- Nessuna modifica a metal/water/iridescent, Kotlin, spec Nitro o demo.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- Validazione visuale runtime resta a Giulio.
+
+## [2026-07-04] - Aura refine - Plasma gradient composition
+- Nuova reference Giulio: screenshot parametri Backgrounds Supply Gradient Lab, preset `Plasma`, 5 colori, zoom 1.40, complexity 3.00, smoothness 0.60, speed 0.40, brightness 1.00, contrast 1.05, saturation 1.10, grain 0.015; video allegato `gradient-1080p-6s-1783191770745.mp4`.
+- Analizzato il video localmente in `/tmp` (non copiato nel repo: 20 MB): 1920×1080, 6.125s, 240 fps. Estratti 13 frame a step 0.5s; motion osservato = drift continuo di masse grandi, non vortice/rumore fine. L'indigo trasla da destra/alto verso sinistra/centro e ritorna; il caldo cresce/respira; il magenta fa da ponte morbido.
+- Branch `aura` in `material-orb.agsl`: composizione riscritta verso plasma opaco a bassissima frequenza: `indigoCenter`/`indigoUpper`, `goldTop`/`goldBottom`, `coralBridge`, `magentaVeil`; palette indigo/violet/magenta/orange/gold; rimosso verde-ciano dominante residuo.
+- Motion `aura`: preset TS portato a `speed: 0.4`, `wobble: 0.22`, `distortion: 0.18`, `detail: 0.6`; nel shader aumentato solo il drift largo (`slowT`, `drift`, `orbitA`, noise time) per seguire il video senza introdurre dettaglio nervoso.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:packageDebug --stacktrace` BUILD SUCCESSFUL dopo un primo fail transitorio di `:app:packageDebug` senza stacktrace utile; `./gradlew :app:assembleDebug` finale BUILD SUCCESSFUL.
+- Validazione visuale runtime resta a Giulio.
+
+## [2026-07-04] - Aura refine - Stop glass material model
+- Feedback screenshot Giulio: composizione vicina, ma percezione materiale ancora sbagliata; l'aura sembrava una biglia di vetro.
+- Causa individuata nel ramo `aura`: nonostante palette plasma, il codice usava ancora normal PBR, `refract`, `sampleEnvSoft`, `depthShade` da `z` e Fresnel fisico; questo reintroduceva una lettura vetrosa.
+- Branch `aura` in `material-orb.agsl`: rimosso il modello glass/PBR dal solo mode 3. Il corpo ora e' colore plasma matte/emissivo (`internal`) clipped dalla skin dell'orb; niente refraction/HDRI/depth shading sul corpo. Restano solo edge glow e membrana opaca controllati da `baseN`/Fresnel leggero per mantenere la silhouette.
+- Nessuna modifica a metal/water/iridescent, Kotlin, spec Nitro o demo.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- Validazione visuale runtime resta a Giulio.
+
+## [2026-07-04] - Aura refine - Target BlendKit + motion video
+- Chiarimento Giulio: target materiale/composizione = immagine BlendKit `thumbnail_6a19d5c6...webp`; il video `gradient-1080p-6s...mp4` serve solo per il comportamento motion.
+- Correzione: rimossa dalla `aura` la palette errata arancio/oro derivata dal video. Il ramo `mode 3` torna alla struttura target: nucleo indaco, massa blu superiore, lobo rosa alto-sinistra, lobo rosa destra, massa bassa, velo magenta, rim ciano/verde basso+alto e magenta laterale.
+- Il motion largo/lento analizzato dal video resta applicato al dominio (`slowT`, `drift`, `orbitA`, noise time), ma non detta piu' colori o composizione.
+- Nessuna modifica a metal/water/iridescent, Kotlin, spec Nitro o demo.
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- Validazione visuale runtime resta a Giulio.
+
+## [2026-07-05] - Metal target clarification
+- Giulio ha chiarito che `glass.webp` era stato considerato solo come possibile riferimento di forma per `metal`, ma la prova visiva non e' piaciuta.
+- Target `metal` confermato: `docs/references/materials/metal.png` per forma/percezione del frame e `docs/references/materials/liquid-orb-metal-swiftui-reference.mp4` per motion/lettura dinamica. `glass.webp` resta solo target del material `glass`.
+- Aggiornati `docs/process/OPERATIONAL-PLAN.md`, `docs/process/HANDOFF.md` e `docs/architecture/material-motion-skin.md` per rimuovere la direttiva "metal prende forma da glass".

@@ -25,27 +25,38 @@ Engine orb = **mini-PBR + IBL** (riflette l'HDRI `assets/env/studio.png`) su sfe
 - **Fase 1 COMPLETATA + validata**: rimossi `liquidMetal` (Paper) e `fluidGradient`
   (componenti/impl/asset/reference); aggiunto material **`aura`** (mode 3 emissivo
   neon). metal/water/iridescent invariati. Commit `251e757`.
-  - `aura`: prima versione OK (viola/magenta emissivo, flussi, core blu). Da
-    rifinire: il **rim deve andare verde (basso) ↔ magenta (alto/lati)**, ora è
-    cyan uniforme; manca il glow verde della ref `aura.webp`. Ritocco piccolo,
-    localizzato nel ramo `mode 3` di `material-orb.agsl`.
+- **Aura BlendKit target + motion video IMPLEMENTATA, da validare da Giulio**:
+  target materiale/composizione = immagine BlendKit `thumbnail_6a19d5c6...webp`;
+  video `gradient-1080p-6s-1783191770745.mp4` serve solo per il comportamento
+  motion. Video analizzato localmente in `/tmp`: motion = drift continuo di
+  masse grandi, non vortice/rumore fine. Implementazione nel ramo `mode 3` di
+  `material-orb.agsl`: nucleo indaco (`blueCore`/`upperBlue`), lobi rosa
+  (`leftPetal`/`rightPetal`/`lowerPetal`), velo magenta, rim ciano/verde
+  basso+alto e magenta laterale; rimossa palette arancio/oro derivata dal video.
+  Dopo feedback "sembra una biglia di vetro", il solo ramo `aura` non usa piu'
+  modello glass/PBR: niente `refract`, HDRI/reflection o `depthShade` sul corpo.
+  Il corpo e' colore organico matte/emissivo clipped dalla skin dell'orb; solo
+  edge glow/membrana opaca usano `baseN` per mantenere la silhouette. Preset
+  `aura`: `speed 0.4`, `wobble 0.22`, `distortion 0.18`, `detail 0.6`.
+  Verifica meccanica verde: `bun run typecheck`, `bun test`,
+  `./gradlew :app:assembleDebug`.
 
 ## Material definitivi (target 5)
 `metal`, `water`, `iridescent`, `aura` (fatti), **`glass`** (Fase 2, ref
 `references/materials/glass.webp` = chrome liquido scuro; la gemma rossa è artefatto).
 
 ## Prossimi passi (in ordine)
-1. **Rifinire `aura`**: rim verde↔magenta bipolare + un filo di bloom sul glow →
-   verso `aura.webp`. Solo il ramo mode 3 di `material-orb.agsl`.
+1. **Giulio valida `aura` su device**. Se non passa, iterare ancora solo sul ramo
+   `mode 3` di `material-orb.agsl`; se passa, procedere a Fase 2.
 2. **Fase 2** (`OPERATIONAL-PLAN.md`):
-   a. **Forma condivisa**: adottare la forma/moto organico a onde larghe di
-      `glass.webp` come geometria/silhouette degli orb (Kotlin `buildMaterialOrbPath`
-      + relief). Oggi la forma è un cerchio con wobble leggero.
-   b. **metal**: prende la forma condivisa (di glass) con le proprietà material verso
-      `references/materials/metal.png` (argento cromato, rim iridescente).
-   c. **glass** (nuovo material, mode 4): chrome liquido scuro traslucido come
+   a. **metal**: target confermato da Giulio = `references/materials/metal.png`
+      + video J `references/materials/liquid-orb-metal-swiftui-reference.mp4`.
+      `glass.webp` non si usa più come forma del metal. Rifinire forma/normal relief,
+      roughness/IBL response e motion verso argento cromato liquido con grigi medi,
+      riflessi più morbidi e rim iridescente sottile.
+   b. **glass** (nuovo material, mode 4): chrome liquido scuro traslucido come
       `glass.webp` (riflessi viola/blu, accenti rossi, highlight bianchi).
-   d. Poi rifinire `water`, `iridescent`, `aura`.
+   c. Poi rifinire `water`, `iridescent`, `aura`.
 
 ## Debito tecnico dichiarato
 1. **Spec Nitro**: le prop di liquidMetal/fluid (shape, colorBack, repetition, scale,

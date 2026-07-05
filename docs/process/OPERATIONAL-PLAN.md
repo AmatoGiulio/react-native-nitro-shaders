@@ -22,7 +22,10 @@ viola/lavanda/blu con accenti **rossi** e highlight bianchi, zone scure.
 La gemma rossa in basso a destra è un **artefatto di ritaglio → ignorare**.
 
 ### metal
-Colore INVARIATO; forma 1:1 con `references/materials/metal.png` (blob organico).
+Target invariato: `references/materials/metal.png` per forma/percezione del frame,
+e `references/materials/liquid-orb-metal-swiftui-reference.mp4` per motion e lettura
+dinamica. `glass.webp` NON è più target di forma per metal: dopo prova visiva non
+ha passato la validazione di Giulio.
 
 ## Fase 0 — Architettura & condivisione codice (analisi + refactor)
 
@@ -92,8 +95,9 @@ prima. Documentazione aggiornata (questo file + engineering).
 (chrome liquido scuro). `liquidMetal` (Paper) e `fluidGradient` ESCONO
 (`fluidGradient` diventa `aura`).
 
-**Forma condivisa**: la silhouette/moto organico a onde larghe di `glass.webp` è la
-forma di riferimento dei material orb; `metal` la adotta (prima: cerchio wobbly).
+**Forma metal**: non si adotta più una forma condivisa da `glass.webp`. Il metal
+resta guidato da `metal.png` + video J. `glass.webp` vale solo per il material
+`glass`.
 
 ## Fase 1 — rimuovere liquidMetal (Paper), fluidGradient → aura
 - **Rimuovere `liquidMetal`**: componente `LiquidMetal`, `liquid-metal.agsl`/`.metal`,
@@ -110,18 +114,16 @@ forma di riferimento dei material orb; `metal` la adotta (prima: cerchio wobbly)
 - DoD: `aura` ≈ ref, `liquidMetal`/`fluidGradient` rimossi (componenti/impl/asset);
   typecheck/test/build verdi; validazione Giulio; doc aggiornata.
 
-## Fase 2 — forma condivisa, metal, glass, poi il resto
+## Fase 2 — metal, glass, poi il resto
 
-1. **Forma condivisa**: adottare la forma/moto organico a onde larghe di
-   `glass.webp` come geometria/silhouette dei material orb (Path nativo Kotlin
-   `buildMaterialOrbPath` + relief della superficie).
-2. **metal**: prende la **forma di glass** (punto 1) con le **proprietà di metal**;
-   avvicinare colore e percezione a `references/materials/metal.png` (argento
-   cromato, rim iridescente) più della resa attuale.
-3. **glass** (nuovo material): chrome liquido scuro traslucido come `glass.webp`
+1. **metal**: rifinire forma, normal relief, roughness/IBL response e motion verso
+   `references/materials/metal.png` + video J. Non usare `glass.webp` come forma.
+   Obiettivo: argento cromato liquido con grigi medi continui, riflessi più morbidi,
+   rim iridescente sottile e movimento organico da video.
+2. **glass** (nuovo material): chrome liquido scuro traslucido come `glass.webp`
    (riflessi viola/blu, accenti rossi, highlight bianchi). Gemma rossa = artefatto,
    ignorare.
-4. Poi rifinire `water`, `iridescent` e `aura` verso il loro standard.
+3. Poi rifinire `water`, `iridescent` e `aura` verso il loro standard.
 - DoD: ogni material validato da Giulio; doc + esempi aggiornati.
 
 ## Ordine e regole

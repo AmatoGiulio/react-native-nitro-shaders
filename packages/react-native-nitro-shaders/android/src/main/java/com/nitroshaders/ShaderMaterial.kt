@@ -7,7 +7,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.RadialGradient
 import android.graphics.RuntimeShader
 import android.graphics.Shader
 import android.os.Build
@@ -41,6 +40,23 @@ internal class MaterialOrbMaterial : ShaderMaterial {
     private val materialOrbPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val materialOrbShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val materialOrbPath = Path()
+
+    // Offscreen pyramid for the soft cast shadow: iterated down/upscale passes
+    // approximate a gaussian blur without MaskFilter (unreliable on HW canvases).
+    private val shadowSrcBitmap = Bitmap.createBitmap(SHADOW_SRC_SIZE, SHADOW_SRC_SIZE, Bitmap.Config.ARGB_8888)
+    private val shadowSrcCanvas = Canvas(shadowSrcBitmap)
+    private val shadowPyramid = intArrayOf(48, 24, 12).map { s ->
+        val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+        bmp to Canvas(bmp)
+    }
+    private val shadowBitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val shadowMatrix = android.graphics.Matrix()
+    private val shadowSrcRect = android.graphics.RectF()
+    private val shadowDstRect = android.graphics.RectF()
+
+    private companion object {
+        const val SHADOW_SRC_SIZE = 96
+    }
     private val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var materialOrbShaderInit = false
     private var materialOrbRuntimeShader: RuntimeShader? = null
@@ -115,7 +131,7 @@ internal class MaterialOrbMaterial : ShaderMaterial {
     private fun drawMaterialOrb(view: ShaderSurfaceView, canvas: Canvas, w: Float, h: Float) {
         val time = view.currentTimeSeconds()
         buildMaterialOrbPath(view, w, h, time)
-        drawMaterialOrbShadow(view, canvas, w, h)
+        drawMaterialOrbShadow(view, canvas, w, h, time)
         canvas.drawPath(materialOrbPath, materialOrbPaint)
     }
 
@@ -128,18 +144,51 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         val warpAmount = view.resolvedMotionWarp().coerceIn(0f, 1.4f)
         val speedAmount = view.resolvedMotionSpeed().coerceAtLeast(0.05f)
         val density = materialOrbDensity(view)
-        val edgeAmp = (0.010f + 0.020f * wobbleAmount + 0.016f * warpAmount) * radius * (1.12f - density * 0.42f)
+        // Reference (floating bubble video): 5-7 broad lobes whose amplitude breathes,
+        // plus localized dents that travel along the rim. Deformation is biased INWARD
+        // so the silhouette never leaves the AGSL sphere domain (|p| <= 1).
+        val lobeAmp = (0.048f + 0.062f * wobbleAmount + 0.026f * warpAmount) * radius * (1.10f - density * 0.35f)
+        val dentDepth = (0.046f + 0.068f * wobbleAmount) * radius * (1.05f - density * 0.30f)
         val phase = time * speedAmount
-        val points = 80
+        val points = 128
+
+        // Traveling dents: angle drifts around the rim, depth breathes in and out.
+        val dentAngle0 = phase * 0.23f
+        val dentAngle1 = -phase * 0.17f + 2.4f
+        val dentAngle2 = phase * 0.11f + 4.6f
+        val dentPulse0 = (0.5f + 0.5f * sin(phase * 0.34f + 0.6f)).coerceAtLeast(0.12f)
+        val dentPulse1 = (0.5f + 0.5f * sin(phase * 0.27f + 3.1f)).coerceAtLeast(0.12f)
+        val dentPulse2 = (0.5f + 0.5f * sin(phase * 0.41f + 5.0f)).coerceAtLeast(0.12f)
+
+        // Breathing amplitude per lobe harmonic: wide swing so the whole body
+        // visibly inflates/relaxes over time, plus a slow global breath.
+        val breathe0 = 0.45f + 0.55f * sin(phase * 0.26f + 1.1f)
+        val breathe1 = 0.45f + 0.55f * sin(phase * 0.33f + 4.0f)
+        val breathe2 = 0.45f + 0.55f * sin(phase * 0.21f + 2.3f)
+        // Heartbeat breath, mirrored 1:1 by the AGSL sphere radius so the whole
+        // body (shading included) inflates and relaxes together.
+        val globalBreath = orbBreath(phase)
 
         materialOrbPath.reset()
         for (i in 0 until points) {
             val a = (i.toDouble() / points.toDouble() * PI * 2.0).toFloat()
-            val wave =
-                sin(a * (2.0f + density) + phase * (0.70f - density * 0.24f)) * 0.44f +
-                sin(a * (3.0f + density * 1.7f) - phase * (0.58f - density * 0.18f) + 1.2f) * 0.34f +
-                sin(a * (5.0f + density * 2.0f) + phase * (0.30f + density * 0.08f) + 2.1f) * 0.22f
-            val r = radius + edgeAmp * wave
+            // Liquid-pebble profile (J reference): many short, shallow notches
+            // (higher harmonics 5/8/11) instead of broad balloon lobes.
+            var wave =
+                sin(a * 5.0f + phase * 0.20f) * 0.42f * breathe0 +
+                sin(a * 8.0f - phase * 0.16f + 1.2f) * 0.34f * breathe1 +
+                sin(a * (11.0f + density) + phase * 0.12f + 2.1f) * 0.24f * breathe2
+            // Bias inward: convex bulges are damped, concavities kept.
+            if (wave > 0f) wave *= 0.30f
+            var r = radius * globalBreath + lobeAmp * 0.62f * wave
+            // Localized traveling dents: narrow, like pressed-in creases.
+            r -= dentDepth * 0.72f * dentPulse0 * dentFalloff(a - dentAngle0, 0.30f)
+            r -= dentDepth * 0.72f * dentPulse1 * dentFalloff(a - dentAngle1, 0.24f)
+            r -= dentDepth * 0.55f * dentPulse2 * dentFalloff(a - dentAngle2, 0.38f)
+            // Gravity sag: the lower profile bulges slightly like a hanging drop
+            // (screen Y grows downward, so sin(a) > 0 is the bottom half).
+            val bottom = sin(a)
+            if (bottom > 0f) r *= 1.0f + 0.018f * bottom * bottom
             val x = cx + cos(a) * r
             val y = cy + sin(a) * r
             if (i == 0) {
@@ -151,6 +200,25 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         materialOrbPath.close()
     }
 
+    // Heartbeat: slow inflate with a quicker relax (asymmetric second harmonic).
+    // Keep in sync with the identical formula in material-orb.agsl.
+    private fun orbBreath(phase: Float): Float {
+        val pb = phase * 0.55f + 0.4f
+        val beat = 0.65f * sin(pb) + 0.35f * sin(2.0f * pb + 1.2f)
+        return 0.945f + 0.055f * beat
+    }
+
+    // Smooth wrapped notch centered on angle delta 0, with the given angular width.
+    private fun dentFalloff(deltaAngle: Float, width: Float): Float {
+        var d = deltaAngle
+        val twoPi = (PI * 2.0).toFloat()
+        while (d > PI) d -= twoPi
+        while (d < -PI) d += twoPi
+        val x = d / width
+        val g = 1.0f - x * x
+        return if (g <= 0f) 0f else g * g
+    }
+
     private fun materialOrbDensity(view: ShaderSurfaceView): Float {
         return when {
             view.orbMaterial < 0.5 -> 0.92f
@@ -159,34 +227,64 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         }
     }
 
-    private fun drawMaterialOrbShadow(view: ShaderSurfaceView, canvas: Canvas, w: Float, h: Float) {
+    private fun drawMaterialOrbShadow(view: ShaderSurfaceView, canvas: Canvas, w: Float, h: Float, time: Float) {
         val size = min(w, h)
         val radius = size * 0.405f
-        val cx = w * 0.5f
         val cy = h * 0.5f
-        val shadowCx = cx
-        val shadowCy = cy + radius * 0.84f
-        val shadowRx = radius * 0.74f
-        val shadowRy = radius * 0.13f
-        val strength = when {
-            view.orbMaterial < 0.5 -> 54
-            view.orbMaterial < 1.5 -> 36
-            else -> 42
+        // Real cast shadow: the orb Path itself, squashed onto the ground and
+        // blurred — every lobe and dent travels with the sphere. It breathes
+        // with the orb volume: inflated body → closer to ground → darker.
+        val speedAmount = view.resolvedMotionSpeed().coerceAtLeast(0.05f)
+        val phase = time * speedAmount
+        val breath01 = ((orbBreath(phase) - 0.890f) / 0.110f).coerceIn(0f, 1f)
+        val cx = w * 0.5f
+        val squashX = 0.55f
+        val squashY = 0.16f
+        val shadowCy = cy + radius * 1.18f
+        // Key light comes from the top-left → shadow shifts slightly right.
+        val shadowOffX = radius * 0.08f
+        val baseStrength = when {
+            view.orbMaterial < 0.5 -> 30
+            view.orbMaterial < 1.5 -> 20
+            else -> 24
         }
-
-        materialOrbShadowPaint.shader = RadialGradient(
-            shadowCx,
-            shadowCy,
-            shadowRx,
-            intArrayOf(Color.argb(strength, 0, 0, 0), Color.argb(0, 0, 0, 0)),
-            floatArrayOf(0.0f, 1.0f),
-            Shader.TileMode.CLAMP
+        // Rasterize the silhouette, then run it down and back up the pyramid:
+        // 96 -> 48 -> 24 -> 12 -> 24 -> 48 -> 96. Six filtered passes ≈ gaussian.
+        val pad = radius * 1.35f
+        shadowSrcBitmap.eraseColor(Color.TRANSPARENT)
+        shadowMatrix.reset()
+        shadowSrcRect.set(cx - pad, cy - pad, cx + pad, cy + pad)
+        shadowDstRect.set(0f, 0f, SHADOW_SRC_SIZE.toFloat(), SHADOW_SRC_SIZE.toFloat())
+        shadowMatrix.setRectToRect(shadowSrcRect, shadowDstRect, android.graphics.Matrix.ScaleToFit.FILL)
+        materialOrbShadowPaint.color = Color.BLACK
+        materialOrbShadowPaint.alpha = 255
+        shadowSrcCanvas.save()
+        shadowSrcCanvas.concat(shadowMatrix)
+        shadowSrcCanvas.drawPath(materialOrbPath, materialOrbShadowPaint)
+        shadowSrcCanvas.restore()
+        var current: Bitmap = shadowSrcBitmap
+        for ((bmp, cnv) in shadowPyramid) {
+            bmp.eraseColor(Color.TRANSPARENT)
+            shadowDstRect.set(0f, 0f, bmp.width.toFloat(), bmp.height.toFloat())
+            cnv.drawBitmap(current, null, shadowDstRect, shadowBitmapPaint)
+            current = bmp
+        }
+        for (i in shadowPyramid.size - 2 downTo 0) {
+            val (bmp, cnv) = shadowPyramid[i]
+            bmp.eraseColor(Color.TRANSPARENT)
+            shadowDstRect.set(0f, 0f, bmp.width.toFloat(), bmp.height.toFloat())
+            cnv.drawBitmap(current, null, shadowDstRect, shadowBitmapPaint)
+            current = bmp
+        }
+        shadowBitmapPaint.alpha = (baseStrength * (0.60f + 0.50f * breath01)).toInt()
+        shadowSrcRect.set(
+            cx + shadowOffX - pad * squashX,
+            shadowCy - pad * squashY,
+            cx + shadowOffX + pad * squashX,
+            shadowCy + pad * squashY
         )
-        canvas.save()
-        canvas.scale(1.0f, shadowRy / shadowRx, shadowCx, shadowCy)
-        canvas.drawCircle(shadowCx, shadowCy, shadowRx, materialOrbShadowPaint)
-        canvas.restore()
-        materialOrbShadowPaint.shader = null
+        canvas.drawBitmap(current, null, shadowSrcRect, shadowBitmapPaint)
+        shadowBitmapPaint.alpha = 255
     }
 }
 

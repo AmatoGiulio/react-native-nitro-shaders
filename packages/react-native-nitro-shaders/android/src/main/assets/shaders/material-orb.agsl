@@ -28,6 +28,14 @@ uniform float u_motionPeriod;
 
 float sat(float v) { return clamp(v, 0.0, 1.0); }
 
+float capsuleMask(float2 p, float2 a, float2 b, float radius, float feather) {
+    float2 pa = p - a;
+    float2 ba = b - a;
+    float h = sat(dot(pa, ba) / max(dot(ba, ba), 0.0001));
+    float d = length(pa - ba * h);
+    return 1.0 - smoothstep(radius, radius + feather, d);
+}
+
 float hash21(float2 p) {
     p = fract(p * float2(123.34, 456.21));
     p += dot(p, p + 45.32);
@@ -127,6 +135,43 @@ float3 perturbNormal3(float3 sp, float3 baseN, float t, float warp, float detail
     return N;
 }
 
+// ---- Rim-fold coupling: the SAME silhouette deviation the native Path uses
+// (ShaderMaterial.kt buildMaterialOrbPath) evaluated in the shader, so border
+// indentations continue inward as surface creases. Keep formulas in sync.
+float rimNotch(float d, float width) {
+    d = mod(d + 3.14159265, 6.2831853) - 3.14159265;
+    float x = d / width;
+    float g = max(1.0 - x * x, 0.0);
+    return g * g;
+}
+
+float rimDeviation(float a, float phase, float amp, float warp, float density) {
+    float b0 = 0.45 + 0.55 * sin(phase * 0.26 + 1.1);
+    float b1 = 0.45 + 0.55 * sin(phase * 0.33 + 4.0);
+    float b2 = 0.45 + 0.55 * sin(phase * 0.21 + 2.3);
+    float w = sin(a * 5.0 + phase * 0.20) * 0.42 * b0
+            + sin(a * 8.0 - phase * 0.16 + 1.2) * 0.34 * b1
+            + sin(a * (11.0 + density) + phase * 0.12 + 2.1) * 0.24 * b2;
+    if (w > 0.0) { w *= 0.30; }
+    float lobeAmp = (0.048 + 0.062 * amp + 0.026 * warp) * (1.10 - density * 0.35) * 0.62;
+    float dentDepth = (0.046 + 0.068 * amp) * (1.05 - density * 0.30);
+    float dev = lobeAmp * w;
+    float p0 = max(0.5 + 0.5 * sin(phase * 0.34 + 0.6), 0.12);
+    float p1 = max(0.5 + 0.5 * sin(phase * 0.27 + 3.1), 0.12);
+    float p2 = max(0.5 + 0.5 * sin(phase * 0.41 + 5.0), 0.12);
+    dev -= dentDepth * 0.72 * p0 * rimNotch(a - phase * 0.23, 0.30);
+    dev -= dentDepth * 0.72 * p1 * rimNotch(a + phase * 0.17 - 2.4, 0.24);
+    dev -= dentDepth * 0.55 * p2 * rimNotch(a - phase * 0.11 - 4.6, 0.38);
+    return dev;
+}
+
+// Height field: silhouette deviation extended inward with a rim-weighted falloff.
+// q is the view-plane position (y-up); native angles are y-down, hence -atan.
+float rimFoldHeight(float2 q, float phase, float amp, float warp, float density) {
+    float aa = -atan(q.y, q.x);
+    return rimDeviation(aa, phase, amp, warp, density) * smoothstep(0.45, 1.05, length(q));
+}
+
 half4 main(float2 fragCoord) {
     float2 res = max(u_resolution, float2(1.0));
     float size = min(res.x, res.y);
@@ -142,12 +187,19 @@ half4 main(float2 fragCoord) {
     float warm = sat(u_materialColor);
 
     // Sphere sized to match the native Path radius (0.405 of min ≈ 0.81 in uv units).
-    float2 p = uv / 0.81;
+    // Heartbeat breath: identical formula to ShaderMaterial.kt orbBreath(), so the
+    // shading sphere inflates/relaxes together with the native silhouette.
+    float pb = t * 0.55 + 0.4;
+    float breath = 0.945 + 0.055 * (0.65 * sin(pb) + 0.35 * sin(2.0 * pb + 1.2));
+    float2 p = uv / (0.81 * breath);
     float dd = dot(p, p);
     float z = sqrt(max(0.0, 1.0 - dd));
     float3 sp = float3(p.x, p.y, z);           // point on the 3D sphere surface
     float3 baseN = normalize(sp);
-    float3 N = perturbNormal3(sp, baseN, t, warp, detail, amp);
+    // Metal reads best with broader, lower-frequency waves than the other materials.
+    float shapeDetail = detail;
+    if (mode < 0.5) { shapeDetail *= 0.35; }
+    float3 N = perturbNormal3(sp, baseN, t, warp, shapeDetail, amp);
 
     float3 V = float3(0.0, 0.0, 1.0);
     float ndv = sat(dot(N, V));
@@ -156,6 +208,7 @@ half4 main(float2 fragCoord) {
     float3 color;
 
     if (mode < 0.5) {
+        // ===== METAL — metallic Principled BSDF, mirror IBL =====
         // ===== METAL — metallic Principled BSDF, mirror IBL =====
         float3 baseTint = mix(float3(0.95, 0.96, 0.98), float3(1.02, 0.98, 0.92), warm);
         float3 spec = sampleEnvSoft(R, 0.10 + 0.15 * warp);
@@ -190,52 +243,141 @@ half4 main(float2 fragCoord) {
         color = mix(pearl * mix(float3(1.0), film, 0.4), refl * film, sat(fres * 1.1 + 0.14));
         color += refl * pow(1.0 - ndv, 4.0) * 0.25;
     } else {
-        // ===== AURA — emissive neon energy orb (bioluminescent, no IBL) =====
-        // Fully self-lit: a domain-warped neon palette flows inside the sphere,
-        // a bipolar fresnel rim glows green<->magenta at the edge, and a tiny
-        // blue core highlight sits near the centre. No environment reflection.
+        // ===== AURA — matte plasma gradient with edge-only glow =====
+        // This material is intentionally not glass/PBR: broad plasma fields are
+        // clipped by the orb skin, with no refraction or glossy environment.
 
-        // Fluid domain warp of the surface point, driven by the same rotating
-        // 3D noise used for the relief → flows animate over the living skin.
-        float3 sp2 = rotate3(sp, t * 0.22 + u_motionSeed, t * 0.34);
+        float slowT = t * 0.92;
+        float auraNdv = sat(dot(baseN, V));
+
+        float3 sp2 = rotate3(sp, slowT * 0.14 + u_motionSeed, slowT * 0.20);
         float3 warpDir = float3(
-            fbm3(sp2 * 1.7 + float3(0.0, t * 0.5, 0.0)),
-            fbm3(sp2 * 1.7 + float3(5.2, t * 0.5, 1.3)),
-            fbm3(sp2 * 1.7 + float3(9.1, t * 0.5, 4.7))
+            fbm3(sp2 * 0.62 + float3(0.0, slowT * 0.22, 0.0)),
+            fbm3(sp2 * 0.62 + float3(5.2, slowT * 0.17, 1.3)),
+            fbm3(sp2 * 0.62 + float3(9.1, slowT * 0.14, 4.7))
         );
-        float flowScale = mix(1.4, 2.8, sat(detail * 0.5));
-        float3 wp = sp2 * flowScale + (warpDir - 0.5) * (1.2 + warp * 1.6);
-        float flow = fbm3(wp + float3(0.0, 0.0, t * 0.6));
-        flow = sat(flow * 1.35 - 0.15);
+        float3 wp = sp2 * 0.76 + (warpDir - 0.5) * (0.26 + warp * 0.58);
+        float2 drift = float2(sin(slowT * 0.82 + u_motionSeed), cos(slowT * 0.64 + 0.7)) * 0.12;
+        float2 gp = wp.xy + drift;
+        gp += float2(
+            fbm3(wp * 0.55 + float3(1.7, slowT * 0.13, 0.0)) - 0.5,
+            fbm3(wp * 0.55 + float3(6.4, 0.0, slowT * 0.11)) - 0.5
+        ) * 0.22;
 
-        // Neon interior palette: dark indigo/violet -> violet -> magenta -> hot pink.
-        float3 indigo  = float3(0.16, 0.08, 0.42);
-        float3 violet  = float3(0.42, 0.14, 0.72);
-        float3 magenta = float3(0.92, 0.20, 0.85);
-        float3 pink    = float3(1.00, 0.55, 0.90);
-        float3 inner = mix(indigo, violet, sat(flow * 1.6));
-        inner = mix(inner, magenta, sat((flow - 0.45) * 2.2));
-        inner = mix(inner, pink, sat((flow - 0.72) * 3.0));
-        // Small tint variation from u_materialColor (cooler <-> warmer neon).
-        inner = mix(inner, inner.bgr * float3(1.0, 0.9, 1.05), (warm - 0.5) * 0.4);
+        float broad = fbm3(wp * 0.42 + float3(0.0, 0.0, slowT * 0.11));
+        float field = fbm3(wp * 0.70 + float3(2.3 + slowT * 0.08, 4.1, 1.6));
+        float2 orbit = gp * 1.40;
+        float orbitA = (broad - 0.5) * 0.18 + slowT * 0.095;
+        float oc = cos(orbitA);
+        float os = sin(orbitA);
+        orbit = float2(orbit.x * oc - orbit.y * os, orbit.x * os + orbit.y * oc);
 
-        // Luminous flowing streams: bright ridges where the flow noise peaks.
-        float streams = pow(sat(fbm3(wp * 1.6 - float3(t * 0.7, 0.0, 0.0))), 3.0);
-        inner += pink * streams * 1.4;
+        float blueCore = capsuleMask(
+            orbit,
+            float2(-0.24, 0.06) + drift * 0.10,
+            float2(0.22, -0.06) - drift * 0.08,
+            0.24,
+            0.36
+        );
+        float upperBlue = capsuleMask(
+            orbit,
+            float2(-0.40, 0.40) - drift * 0.12,
+            float2(0.54, 0.30) + drift * 0.12,
+            0.26,
+            0.38
+        );
+        float leftPetal = capsuleMask(
+            orbit,
+            float2(-0.62, 0.48) + drift * 0.20,
+            float2(-0.28, 0.12) - drift * 0.10,
+            0.17,
+            0.28
+        );
+        float rightPetal = capsuleMask(
+            orbit,
+            float2(0.04, -0.34) - drift * 0.14,
+            float2(0.70, 0.03) + drift * 0.18,
+            0.24,
+            0.36
+        );
+        float lowerPetal = capsuleMask(
+            orbit,
+            float2(-0.12, -0.54) + drift * 0.10,
+            float2(0.46, -0.38) - drift * 0.16,
+            0.15,
+            0.30
+        );
+        float magentaVeil = capsuleMask(
+            orbit,
+            float2(-0.92, -0.18) - drift * 0.12,
+            float2(0.82, 0.20) + drift * 0.12,
+            0.22,
+            0.44
+        );
+        float cyanDrift = capsuleMask(
+            orbit,
+            float2(-0.70, -0.72) + drift * 0.18,
+            float2(0.26, -0.68) - drift * 0.08,
+            0.10,
+            0.28
+        );
+        float topCyan = capsuleMask(
+            orbit,
+            float2(-0.36, 0.78) - drift * 0.10,
+            float2(0.32, 0.70) + drift * 0.08,
+            0.06,
+            0.22
+        );
+        float pinkMask = smoothstep(0.08, 0.84, sat(max(max(leftPetal, rightPetal), lowerPetal * 0.72) * mix(0.82, 1.18, field)));
+        float blueMass = smoothstep(0.08, 0.86, sat(max(blueCore, upperBlue * 0.76) * mix(0.88, 1.16, 1.0 - field)));
+        float collision = smoothstep(0.16, 0.76, pinkMask) * smoothstep(0.14, 0.82, blueMass);
+        float centerDamp = smoothstep(0.12, 0.78, length(orbit + float2(0.10, -0.02)));
+        float membraneInner = smoothstep(0.66, 0.88, length(p)) * (1.0 - smoothstep(0.84, 0.97, length(p)));
+        float membraneOuter = smoothstep(0.76, 0.99, length(p)) * pow(1.0 - auraNdv, 1.35);
+        float pearlVeil = smoothstep(0.18, 0.92, fbm3(wp * 0.34 + float3(6.2 - slowT * 0.035, 1.1, 3.9)));
 
-        color = inner;
+        float3 indigo = float3(0.09, 0.10, 0.46);
+        float3 violet = float3(0.34, 0.20, 0.70);
+        float3 magenta = float3(0.92, 0.15, 0.90);
+        float3 pink = float3(0.95, 0.42, 0.82);
+        float3 blush = float3(0.95, 0.62, 0.86);
+        float3 cyan = float3(0.18, 1.00, 0.72);
+        float3 aqua = float3(0.54, 0.94, 1.00);
+        float3 internal = mix(indigo, violet, smoothstep(0.12, 0.88, broad) * 0.34);
+        internal = mix(internal, pink, pinkMask * 0.74);
+        internal = mix(internal, blush, smoothstep(0.44, 1.0, pinkMask) * 0.22);
+        internal = mix(internal, indigo * 0.92, blueMass * 0.78);
+        internal = mix(internal, magenta, magentaVeil * (1.0 - blueMass * 0.38) * 0.34);
+        internal = mix(internal, mix(indigo, magenta, 0.40), collision * 0.40);
+        internal *= mix(0.82, 1.04, centerDamp);
+        internal = mix(internal, aqua, pearlVeil * 0.028 * smoothstep(0.50, 1.0, 1.0 - auraNdv));
+        internal += cyan * membraneInner * max(cyanDrift, topCyan) * 0.10;
 
-        // Bipolar fresnel rim: green at the bottom, magenta at the top/sides.
-        float fres = pow(1.0 - ndv, 2.6);
-        float vert = N.y * 0.5 + 0.5;                    // 0 bottom -> 1 top
-        float3 rimGreen   = float3(0.20, 1.00, 0.45);
-        float3 rimMagenta = float3(1.00, 0.20, 0.95);
-        float3 rimCol = mix(rimGreen, rimMagenta, smoothstep(0.30, 0.75, vert));
-        color += rimCol * fres * 2.6;
+        float edgeLight = smoothstep(0.58, 1.0, length(p));
+        color = internal;
+        color *= mix(0.94, 1.04, edgeLight);
+        color *= mix(0.98, 0.90, smoothstep(0.0, 0.38, length(p)));
 
-        // Tiny blue core highlight near the sphere centre.
-        float core = smoothstep(0.16, 0.0, length(p)) * ndv;
-        color += float3(0.35, 0.55, 1.0) * core * 1.2;
+        float3 film = 0.5 + 0.5 * cos(6.2831 * (membraneOuter * 0.58 + broad * 0.12 + float3(0.0, 0.24, 0.58)));
+        color = mix(color, color * mix(float3(1.0), film, 0.08), membraneOuter * 0.18);
+
+        // Animated LayerWeight/Fresnel-like aura emission on the rim.
+        float edge = smoothstep(0.50, 1.0, length(p));
+        float3 rimSp = rotate3(baseN, slowT * 0.18 + u_motionSeed, slowT * 0.28);
+        float vert = rimSp.y * 0.5 + 0.5;
+        float side = smoothstep(0.22, 0.92, abs(rimSp.x));
+        float rimFlow = smoothstep(0.22, 0.86, fbm3(rimSp * 0.82 + float3(0.0, slowT * 0.13, 2.6)));
+        float greenZone = sat(max(1.0 - smoothstep(0.18, 0.62, vert), smoothstep(0.58, 0.96, vert) * 0.66) * mix(0.76, 1.16, rimFlow));
+        float sideMagenta = smoothstep(0.20, 0.88, side);
+        float3 rimCol = mix(magenta, cyan, greenZone * 0.76);
+        rimCol = mix(rimCol, violet, sideMagenta * 0.20);
+        float3 mattePearl = mix(cyan, magenta, smoothstep(0.22, 0.82, vert));
+        color += mattePearl * membraneOuter * 0.28;
+        color += rimCol * pow(1.0 - auraNdv, 1.85) * (0.82 + edge * 0.74);
+        color += cyan * edge * greenZone * 0.18;
+
+        float satinWash = pearlVeil * edgeLight * pow(1.0 - auraNdv, 2.2);
+        color += mattePearl * satinWash * 0.07;
 
         color += (hash21(fragCoord + u_time) - 0.5) / 255.0;
         return half4(half3(clamp(color, 0.0, 1.0)), 1.0);

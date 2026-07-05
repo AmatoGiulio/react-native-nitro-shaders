@@ -54,7 +54,7 @@ Cinque materiali pubblici, piatti (niente famiglie/sottocategorie):
 
 | Nome pubblico | Descrizione | Parametri propri | Stato |
 |---|---|---|---|
-| `metal` | metallo liquido cromato (IBL); forma da `glass.webp`, proprietà verso `metal.png` | `materialColor`; target PBR `metallic`/`roughness` | IBL, mode 0 |
+| `metal` | metallo liquido cromato (IBL); target forma/percezione `metal.png` + video J | `materialColor`; target PBR `metallic`/`roughness` | IBL, mode 0 |
 | `water` | gel/acqua translucido (IBL) | `materialColor`; target `transmission`/`ior` | IBL, mode 1 |
 | `iridescent` | bolla di sapone thin-film (IBL) | `materialColor`; target `iridescence` | IBL, mode 2 |
 | `aura` | neon energy orb (glow verde/magenta, flussi rosa) — ex `fluidGradient` | `colors`/glow | da fare (ref `aura.webp`) |
