@@ -4,12 +4,20 @@ export type MaterialOrbMaterial = 'metal' | 'water' | 'iridescent' | 'aura' | 'm
 
 // Per-material parameter preset, observed from the references
 // (docs/references/materials/ + the @jc_builds reference video).
-type MaterialOrbPreset = {
+export type MaterialOrbPreset = {
   speed: number
   wobble: number
   distortion: number
   detail: number
   materialColor: number
+  /** water/gel body density (Volume Absorption). Omit for the engine default (1.0). */
+  density?: number
+  /** water/gel smooth-patch amount. Omit for the engine default (0.0). */
+  smooth?: number
+  /** horizontal env rotation in radians. Omit for the engine default (0). */
+  envRot?: number
+  /** pseudo-HDR boost default for this material. Omit for the engine default (true). */
+  hdr?: boolean
 }
 
 // A material orb registry entry: the shader mode index plus its parameter preset.
@@ -46,13 +54,18 @@ export const ORB_MATERIALS: Record<MaterialOrbMaterial, OrbMaterialDefinition> =
     name: 'water',
     orbMaterial: 1,
     // Live-tunable in the lab: wobble=wave height, distortion=flow, detail=frequency/
-    // definition, materialColor=frost (0 clear glass → 1 frosted). Default = clear.
+    // definition, materialColor=frost (0 clear glass → 1 frosted).
+    // Values frozen from Giulio's on-device validation (2026-07-06, env sunset sea,
+    // HDR boost off).
     preset: {
-      speed: 1.39,
-      wobble: 0.6,
-      distortion: 0.55,
-      detail: 1.43,
+      speed: 2.0,
+      wobble: 0.38,
+      distortion: 0.0,
+      detail: 0.19,
       materialColor: 0.2,
+      density: 1.11,
+      smooth: 0.6,
+      hdr: false,
     },
   },
   iridescent: {
@@ -66,14 +79,18 @@ export const ORB_MATERIALS: Record<MaterialOrbMaterial, OrbMaterialDefinition> =
       materialColor: 1,
     },
   },
+  // aura: symbiote look (BlenderKit "Symbiote With Aura Power"): emissive 3-layer —
+  // lavender Smoke fog + purple Symbiote body (blue wells, pink flows) + green rim
+  // glow. Live knobs: distortion→noise distortion, detail→noise scale, materialColor
+  // →pink-flow coverage. Env-independent (fully emissive).
   aura: {
     name: 'aura',
     orbMaterial: 3,
     preset: {
       speed: 0.4,
-      wobble: 0.22,
-      distortion: 0.18,
-      detail: 0.6,
+      wobble: 0.4,
+      distortion: 0.3,
+      detail: 0.5,
       materialColor: 0.5,
     },
   },
@@ -97,12 +114,16 @@ export const ORB_MATERIALS: Record<MaterialOrbMaterial, OrbMaterialDefinition> =
   glass: {
     name: 'glass',
     orbMaterial: 5,
+    // Values frozen from Giulio's on-device validation (2026-07-06, env lab-2 dark
+    // teal, HDR boost ON). density/smooth are water-only knobs → not part of glass.
     preset: {
-      speed: 0.4,
+      speed: 2.0,
       wobble: 0.4,
-      distortion: 0.5,
-      detail: 0.28,
+      distortion: 0.07,
+      detail: 0.69,
       materialColor: 0.5,
+      envRot: 2.85,
+      hdr: true,
     },
   },
 }
@@ -111,27 +132,10 @@ export const ORB_MATERIALS: Record<MaterialOrbMaterial, OrbMaterialDefinition> =
 // any existing importer of the old shape (`{ orbMaterial, speed, wobble, ... }`).
 export const MATERIAL_ORB_PRESETS: Record<
   MaterialOrbMaterial,
-  {
-    orbMaterial: number
-    speed: number
-    wobble: number
-    distortion: number
-    detail: number
-    materialColor: number
-  }
+  { orbMaterial: number } & MaterialOrbPreset
 > = Object.fromEntries(
   Object.entries(ORB_MATERIALS).map(([key, def]) => [
     key,
     { orbMaterial: def.orbMaterial, ...def.preset },
   ]),
-) as Record<
-  MaterialOrbMaterial,
-  {
-    orbMaterial: number
-    speed: number
-    wobble: number
-    distortion: number
-    detail: number
-    materialColor: number
-  }
->
+) as Record<MaterialOrbMaterial, { orbMaterial: number } & MaterialOrbPreset>

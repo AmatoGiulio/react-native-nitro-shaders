@@ -27,12 +27,12 @@ const ENVS = [
   require('./assets/envs/lab-4.png'),
   require('./assets/envs/lab-5.png'),
   require('./assets/envs/lab-6.png'),
-  require('./assets/envs/lab-7.png'), // studio (metal/water default)
+  require('./assets/envs/lab-7.png'), // studio (metal default)
   require('./assets/envs/lab-8.png'), // mercury default
   require('./assets/envs/lab-9.png'), // glass default (wooden_studio_08)
   require('./assets/envs/lab-10.png'), // hangar_interior (CC0 stand-in for BlendKit metal-hangar)
   require('./assets/envs/lab-11.png'), // qwantani dawn pure sky (water/gel reference env)
-  require('./assets/envs/lab-12.png'), // sunset sea (clouds + ocean)
+  require('./assets/envs/lab-12.png'), // sunset sea (clouds + ocean) — water default
   require('./assets/envs/lab-13.png'), // calm sea reflecting the sky
   require('./assets/envs/lab-14.png'), // purple haze sky over sea
 ];
@@ -45,10 +45,14 @@ function presetParams(material: MaterialOrbMaterial) {
     distortion: p.distortion,
     detail: p.detail,
     materialColor: p.materialColor,
-    density: 1.0,
-    smooth: 0.0,
-    envRot: 0,
+    density: p.density ?? 1.0,
+    smooth: p.smooth ?? 0.0,
+    envRot: p.envRot ?? 0,
   };
+}
+
+function presetHdr(material: MaterialOrbMaterial): boolean {
+  return MATERIAL_ORB_PRESETS[material].hdr ?? true;
 }
 
 type ParamKey = keyof ReturnType<typeof presetParams>;
@@ -99,11 +103,12 @@ export default function App() {
   const [material, setMaterial] = useState<MaterialOrbMaterial>('mercury');
   const [params, setParams] = useState(presetParams('mercury'));
   const [envIndex, setEnvIndex] = useState<number | undefined>(undefined);
-  const [hdr, setHdr] = useState(true);
+  const [hdr, setHdr] = useState(presetHdr('mercury'));
 
   const switchMaterial = (m: MaterialOrbMaterial) => {
     setMaterial(m);
     setParams(presetParams(m));
+    setHdr(presetHdr(m));
   };
 
   return (
@@ -166,7 +171,12 @@ export default function App() {
               </View>
               <Text style={styles.hdrLabel}>HDR boost</Text>
             </Pressable>
-            <Pressable onPress={() => setParams(presetParams(material))}>
+            <Pressable
+              onPress={() => {
+                setParams(presetParams(material));
+                setHdr(presetHdr(material));
+              }}
+            >
               <Text style={styles.reset}>Reset to defaults</Text>
             </Pressable>
           </View>

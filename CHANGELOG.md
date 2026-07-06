@@ -2,6 +2,51 @@
 
 Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a fine sessione.
 
+## [2026-07-06 sera] — Fase materiali — water VALIDATO da Giulio e congelato come default
+- **water validato su device** (screenshot Giulio): preset default congelato = speed 2.0,
+  wobble 0.38, distortion 0.0, detail 0.19, color 0.2, density 1.11, smooth 0.6, HDR off.
+- **Env default water = sunset sea**: `water-env.png` sostituito con la copia di `lab-12.png`
+  (era qwantani_dawn_puresky). Licenza lab-12 confermata free da Giulio →
+  water-env senza debito licenze (ASSET-LICENSES.md aggiornato).
+- **Preset estesi**: `MaterialOrbPreset` ora supporta `density`/`smooth`/`hdr` opzionali;
+  `MaterialOrb` li usa come default per-material (fallback 1.0 / 0.0 / true). Il lab
+  (apps/example) legge i nuovi campi e sincronizza il checkbox HDR al cambio material e
+  al "Reset to defaults".
+- Typecheck package OK; typecheck example a parità di baseline (resta il solo TS2307
+  preesistente sulla risoluzione del modulo workspace).
+- Restano DA VALIDARE: glass e mercury.
+- **DECISIONE: aura sostituita** dal look del materiale BlenderKit "Symbiote With
+  Aura Power" (emissivo: Smoke interno + corpo Symbiote viola + rim glow verde; niente
+  env). Nome pubblico `aura` invariato.
+- **aura/symbiote IMPLEMENTATA** (ground truth = render dei 3 layer isolati forniti da
+  Giulio): mode 3 riscritto in material-orb.agsl — Smoke fog lavanda (gfbm Scale 1.8,
+  Detail 2.6) + corpo Symbiote (noise Scale 1.7, 1 ottava, Distortion 0.2: pozzi blu
+  face-on, flussi rosa con frangia aqua, viola verso il bordo) + rim glow verde/ciano
+  a chiazze animate; key light finta top-left (shading + speculare waxy). Silhouette
+  liscia estesa a mode 3 (Kotlin smoothSilhouette ≥2.5 + skip rim-fold in AGSL).
+  Rimossi il vecchio blocco plasma/capsule e capsuleMask. Knob live: distortion→
+  distorsione noise, detail→scala, materialColor→copertura flussi rosa. Build example
+  Android OK, typecheck OK. DA VALIDARE su device.
+- **glass validato su device e congelato** (screenshot Giulio): preset default = speed 2.0,
+  wobble 0.4, distortion 0.07, detail 0.69, color 0.5, envRot 2.85, HDR on. Env default
+  `glass-env.png` sostituito con copia di `lab-2.png` (teal scuro; era wooden_studio_08).
+  ⚠️ lab-2 = thumbnail BlendKit SOLO SVILUPPO, 1.1MB → da sostituire/ottimizzare prima
+  della pubblicazione. Aggiunto `envRot` opzionale ai preset (usato da MaterialOrb e lab).
+- **aura/symbiote v2** (feedback device: v1 "scadente, non si avvicina"): un solo campo
+  di noise per pozzo blu + massa rosa + pelle (adiacenti come la ref), aqua ridotta a
+  frangia sottile, lembo traslucido che schiarisce, pozzo concavo con labbro, sheen
+  ceroso doppio. Preset aura: wobble 0.4, distortion 0.3, detail 0.5. DA RIVALIDARE.
+- **aura/symbiote v3** (feedback v2: "bruttissimo" — solo pelle+vene+spec bianchi):
+  causa = gfbm compresso in [0.35,0.65], soglie mai raggiunte e labbro-banda globale.
+  Fix: contrast-normalize del campo, labbro solo sul bordo pozzo, spec satin.
+  Animazione: boiling morph continuo (drift del dominio ≈ Velocity/W di Blender) +
+  respiro delle soglie rosa/pozzo. DA RIVALIDARE.
+- **aura/symbiote v4** (feedback v3: "2D, poca profondità, fuori contesto rispetto a
+  water e metal"): masse colore campionate in un punto interno lungo il raggio
+  rifratto (parallasse sotto pelle traslucida), coat lucido IBL dallo stesso env degli
+  altri material (grazing + glint), attenuazione interna verso il lembo, masse più
+  grandi. DA RIVALIDARE.
+
 ## [2026-07-06] — Fase materiali — glass nuovo, mercury rivisto, water→gel, env CC0
 - **Fix build Android example**: namespace/applicationId allineati a `com.anonymous.example`
   (era `com.example` → `R`/`BuildConfig` unresolved); rimosso BOM e autolinking.json stantio.

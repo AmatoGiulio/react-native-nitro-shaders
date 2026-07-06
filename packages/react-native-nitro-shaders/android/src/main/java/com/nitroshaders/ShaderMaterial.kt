@@ -69,12 +69,14 @@ internal class MaterialOrbMaterial : ShaderMaterial {
     private var envShader: BitmapShader? = null
     private var mercuryEnvBitmap: Bitmap? = null
     private var mercuryEnvShader: BitmapShader? = null
-    // glass refracts a real wooden studio HDRI (Poly Haven "wooden_studio_08", CC0),
-    // the same env used in the Blender dispersion-glass ground truth.
+    // glass refracts a dark teal env (lab-2) — frozen from Giulio's on-device
+    // validation 2026-07-06. BlendKit preview asset, DEV-ONLY license (replace
+    // before publishing — see ASSET-LICENSES.md).
     private var glassEnvBitmap: Bitmap? = null
     private var glassEnvShader: BitmapShader? = null
-    // water/gel refracts a dawn sky HDRI (Poly Haven "qwantani_dawn_puresky", CC0),
-    // the Blender Gel-shader ground-truth env — warm horizon + cool sky.
+    // water/gel refracts a sunset-sea env (lab-12, clouds + ocean) — frozen from
+    // Giulio's on-device validation 2026-07-06. BlendKit asset, free license
+    // (see ASSET-LICENSES.md).
     private var waterEnvBitmap: Bitmap? = null
     private var waterEnvShader: BitmapShader? = null
     // Runtime-switchable lab environments (env/lab-N.png), loaded lazily.
@@ -227,12 +229,12 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         // body (shading included) inflates and relaxes together.
         val globalBreath = orbBreath(phase)
 
-        // Smooth wax-blob silhouette (mercury mode 4 + glass mode 5 + water mode 1).
-        // Rounder, moved by slow low harmonic swells instead of the liquid-pebble
-        // notches + traveling dents, so it reads like the Blender dispersion-glass /
-        // gel sphere (wave displacement, no pressed-in creases). Water shares this
-        // smooth gel shape with mercury/glass.
-        val smoothSilhouette = view.orbMaterial >= 3.5 || (view.orbMaterial >= 0.5 && view.orbMaterial < 1.5)
+        // Smooth wax-blob silhouette (aura/symbiote mode 3 + mercury mode 4 + glass
+        // mode 5 + water mode 1). Rounder, moved by slow low harmonic swells instead
+        // of the liquid-pebble notches + traveling dents, so it reads like the Blender
+        // dispersion-glass / gel / symbiote sphere (wave displacement, no pressed-in
+        // creases).
+        val smoothSilhouette = view.orbMaterial >= 2.5 || (view.orbMaterial >= 0.5 && view.orbMaterial < 1.5)
         materialOrbPath.reset()
         for (i in 0 until points) {
             val a = (i.toDouble() / points.toDouble() * PI * 2.0).toFloat()
