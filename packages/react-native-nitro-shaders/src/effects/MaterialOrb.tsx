@@ -14,6 +14,10 @@ export type MaterialOrbProps = {
   distortion?: number
   detail?: number
   materialColor?: number
+  /** Runtime environment override: index of assets env/lab-N.png. Omit for the material default. */
+  environment?: number
+  /** Pseudo-HDR highlight expansion on the reflected env (default true). */
+  hdr?: boolean
   animated?: boolean
   paused?: boolean
   debugTime?: number
@@ -41,6 +45,8 @@ export function MaterialOrb(props: MaterialOrbProps) {
     distortion = resolvedMotion.motionWarp,
     detail = resolvedMotion.motionDetail,
     materialColor = preset.materialColor,
+    environment,
+    hdr = true,
     animated = true,
     paused = false,
     debugTime = -1,
@@ -58,6 +64,11 @@ export function MaterialOrb(props: MaterialOrbProps) {
       distortion={distortion}
       detail={detail}
       materialColor={materialColor}
+      // Lab env switch rides the legacy `repetition` slot (offset +100) until the
+      // material API stabilizes — see HANDOFF declared debt.
+      repetition={environment !== undefined ? environment + 100 : undefined}
+      // Pseudo-HDR toggle rides the legacy `grain` slot (same declared debt).
+      grain={hdr ? 1 : 0}
       motionType={resolvedMotion.motionType}
       motionSpeed={speed}
       motionAmp={wobble}

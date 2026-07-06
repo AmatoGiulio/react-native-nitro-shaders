@@ -7,6 +7,7 @@ Asset di terzi bundlati o usati come reference nel repo.
 | Asset | Uso | Provenienza | Licenza |
 |---|---|---|---|
 | `packages/react-native-nitro-shaders/android/src/main/assets/env/studio.png` | Environment IBL (studio) riflesso dai material orb | Poly Haven — `studio_small_08` (HDRI), convertito a PNG equirettangolare 1024×512 | CC0 (public domain) |
+| `packages/react-native-nitro-shaders/android/src/main/assets/env/mercury-env.png` | Environment riflesso dal material mercury | Greyscalegorilla Pro Studios Metal Vol2 05 (preview pubblica ritagliata) — SOLO SVILUPPO, da sostituire con env proprio prima della pubblicazione | DA SOSTITUIRE |
 
 ## Reference (non spediti)
 

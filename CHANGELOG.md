@@ -235,3 +235,14 @@ Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a f
 - Giulio ha chiarito che `glass.webp` era stato considerato solo come possibile riferimento di forma per `metal`, ma la prova visiva non e' piaciuta.
 - Target `metal` confermato: `docs/references/materials/metal.png` per forma/percezione del frame e `docs/references/materials/liquid-orb-metal-swiftui-reference.mp4` per motion/lettura dinamica. `glass.webp` resta solo target del material `glass`.
 - Aggiornati `docs/process/OPERATIONAL-PLAN.md`, `docs/process/HANDOFF.md` e `docs/architecture/material-motion-skin.md` per rimuovere la direttiva "metal prende forma da glass".
+
+## [2026-07-05] - Mercury + Env Lab - Nuovo material e laboratorio di tuning runtime
+- Consolidamento metal committato (`d160578`): chrome validato, morph in place delle pieghe (Lissajous al posto della rotazione del dominio), rim-fold coupling (le intaccature della silhouette continuano dentro come pieghe), battito cardiaco sincrono Path+shader, ombra reale (silhouette proiettata con blur piramidale), sag gravitazionale.
+- Nuovo material `mercury` (mode 4, quinto material): mercurio liquido denso — specchio nitido tinta piombo (F0 ~0.75), oscillazione di goccia l=2 prolato/oblato con asimmetria fisica, S-curve di contrasto dedicata. Registry Open/Closed rispettato (entry TS + ramo AGSL + density/ombra Kotlin).
+- Diagnosi pipeline condivisa con Giulio: il 90% del look = environment riflesso; i render di riferimento usano env astratti ad alto contrasto (masse nere + fasci bianchi, es. GSG Pro Studios Metal), non stanze fotografiche; il PNG LDR clampa le luci a 1.0.
+- Pseudo-HDR in `sampleEnv` (inverse tonemap, boost fino a 6x sopra lum 0.70), ora toggle runtime via prop `hdr` di MaterialOrb (uniform `u_hdrBoost` sullo slot legacy `grain`; hdr=false = look validato pre-boost).
+- Laboratorio runtime nella demo: tabs per switchare i 5 material live (slider sincronizzati al preset), riga di anteprime per switchare 7 environment (`assets/env/lab-0..6.png`, indice sullo slot legacy `repetition` offset +100, prop `environment`), checkbox HDR.
+- Ground truth Blender automatizzata: `tools/blender/ground_truth.py` (headless, sfera chrome + env → PNG); renderizzate le ground truth dei 7 env: candidati migliori lab-1 (pannelli luce su nero) e lab-5 (tunnel neon).
+- Licenze: lab-0 deriva da preview pubblica GSG (DA SOSTITUIRE prima della pubblicazione, come da ASSET-LICENSES); lab-1..6 da thumbnail BlendKit (stessa nota).
+- Verifica: `bun run typecheck` verde, `bun test` 6/6, `./gradlew :app:assembleDebug` verde.
+- Aperto: validazione visiva di mercury e scelta env definitivo (Giulio, ora sul PC Windows con Blender per il lavoro sugli environment).

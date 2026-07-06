@@ -25,6 +25,7 @@ uniform float u_motionWarp;
 uniform float u_motionDetail;
 uniform float u_motionSeed;
 uniform float u_motionPeriod;
+uniform float u_hdrBoost;   // 1 = pseudo-HDR highlight expansion, 0 = plain LDR
 
 float sat(float v) { return clamp(v, 0.0, 1.0); }
 
@@ -90,7 +91,14 @@ float3 sampleEnv(float3 dir) {
     float u = atan(dir.z, dir.x) * 0.1591549 + 0.5;
     float v = acos(clamp(dir.y, -1.0, 1.0)) * 0.3183099;
     float2 px = float2(fract(u) * u_envSize.x, clamp(v, 0.0, 1.0) * u_envSize.y);
-    return float3(u_env.eval(px).rgb);
+    float3 c = float3(u_env.eval(px).rgb);
+    // Inverse tonemap (pseudo-HDR): an LDR PNG clamps light sources to 1.0, so a
+    // reflected softbox has the energy of a white wall and chrome reads flat.
+    // Re-expand the top of the range so lights reflect as lights (up to ~6x).
+    float lum = dot(c, float3(0.299, 0.587, 0.114));
+    float boost = smoothstep(0.70, 1.0, lum);
+    c *= 1.0 + 5.0 * boost * boost * u_hdrBoost;
+    return c;
 }
 
 float3 sampleEnvSoft(float3 dir, float rough) {
@@ -207,7 +215,7 @@ half4 main(float2 fragCoord) {
 
     // Rim-fold coupling: bend N by the gradient of the silhouette height field so
     // each border indentation continues inward as a crease (matches native Path).
-    float density = (mode < 0.5) ? 0.92 : ((mode < 1.5) ? 0.45 : 0.62);
+    float density = (mode < 0.5) ? 0.92 : ((mode < 1.5) ? 0.45 : ((mode < 3.5) ? 0.62 : 0.90));
     float rphase = t;
     float e2 = 0.02;
     float hC = rimFoldHeight(p, rphase, amp, warp, density);
@@ -260,7 +268,7 @@ half4 main(float2 fragCoord) {
         float3 pearl = mix(through, float3(0.93, 0.92, 0.95), 0.45);
         color = mix(pearl * mix(float3(1.0), film, 0.4), refl * film, sat(fres * 1.1 + 0.14));
         color += refl * pow(1.0 - ndv, 4.0) * 0.25;
-    } else {
+    } else if (mode < 3.5) {
         // ===== AURA — matte plasma gradient with edge-only glow =====
         // This material is intentionally not glass/PBR: broad plasma fields are
         // clipped by the orb skin, with no refraction or glossy environment.
@@ -397,6 +405,31 @@ half4 main(float2 fragCoord) {
         float satinWash = pearlVeil * edgeLight * pow(1.0 - auraNdv, 2.2);
         color += mattePearl * satinWash * 0.07;
 
+        color += (hash21(fragCoord + u_time) - 0.5) / 255.0;
+        return half4(half3(clamp(color, 0.0, 1.0)), 1.0);
+    } else {
+        // ===== MERCURY — dense liquid-metal blob (realistic quicksilver) =====
+        // Surface tension: only broad, smooth undulations (no fine detail), moving
+        // slow and heavy. Near-perfect mirror with the lead-silver tint of mercury.
+        // Deep smooth bulges (strong bump, low frequency) + a HARD mirror: liquid
+        // metal reads from crisp reflected shapes, soft gradients read as gas.
+        float3 Nm = perturbNormal3(sp, baseN, t * 0.55, warp, detail * 0.35, amp);
+        // keep the rim-fold coupling so the silhouette creases continue inward
+        Nm = normalize(Nm - rimTang * 3.2);
+        float ndvM = sat(dot(Nm, V));
+        float3 Rm = reflect(-V, Nm);
+        float3 tint = float3(0.76, 0.765, 0.775); // mercury: near-neutral lead-silver
+        float3 spec = sampleEnv(Rm);              // sharp mirror, no softening
+        float3 F = mix(tint, float3(1.0), pow(1.0 - ndvM, 5.0));
+        color = spec * F;
+        // weight: the belly reflects the ground → subtle darkening below
+        color *= 0.86 + 0.14 * smoothstep(-0.9, 0.5, Nm.y);
+        // crisp window glints riding the bulges
+        float lum = dot(spec, float3(0.299, 0.587, 0.114));
+        color += spec * smoothstep(0.80, 1.0, lum) * 0.4;
+        // dense-metal contrast: own S-curve instead of the soft filmic tonemap
+        color = clamp(color, 0.0, 1.0);
+        color = mix(color, color * color * (3.0 - 2.0 * color), 0.45);
         color += (hash21(fragCoord + u_time) - 0.5) / 255.0;
         return half4(half3(clamp(color, 0.0, 1.0)), 1.0);
     }

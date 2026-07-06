@@ -61,26 +61,51 @@ internal class MaterialOrbMaterial : ShaderMaterial {
     private var materialOrbShaderInit = false
     private var materialOrbRuntimeShader: RuntimeShader? = null
 
-    // Studio environment (equirectangular HDRI) reflected/refracted by the material.
+    // Studio environments (equirectangular) reflected/refracted by the materials.
+    // metal/water/iridescent/aura share the dark studio; mercury reflects a bright
+    // room so it reads real on the light app background.
     private var envInit = false
     private var envBitmap: Bitmap? = null
     private var envShader: BitmapShader? = null
+    private var mercuryEnvBitmap: Bitmap? = null
+    private var mercuryEnvShader: BitmapShader? = null
+    // Runtime-switchable lab environments (env/lab-N.png), loaded lazily.
+    private val labEnvs = HashMap<Int, Pair<Bitmap, BitmapShader>>()
+
+    private fun loadEnvBitmap(view: ShaderSurfaceView, asset: String): Bitmap {
+        val bmp = try {
+            view.appContext.assets.open(asset).use { BitmapFactory.decodeStream(it) }
+        } catch (e: Exception) {
+            null
+        }
+        return bmp ?: Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also {
+            it.eraseColor(Color.rgb(128, 130, 134))
+        }
+    }
 
     private fun ensureMaterialOrbEnv(view: ShaderSurfaceView) {
         if (envInit) {
             return
         }
         envInit = true
+        val env = loadEnvBitmap(view, "env/studio.png")
+        envBitmap = env
+        envShader = BitmapShader(env, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
+        val mercuryEnv = loadEnvBitmap(view, "env/mercury-env.png")
+        mercuryEnvBitmap = mercuryEnv
+        mercuryEnvShader = BitmapShader(mercuryEnv, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
+    }
+
+    private fun labEnv(view: ShaderSurfaceView, index: Int): Pair<Bitmap, BitmapShader>? {
+        labEnvs[index]?.let { return it }
         val bmp = try {
-            view.appContext.assets.open("env/studio.png").use { BitmapFactory.decodeStream(it) }
+            view.appContext.assets.open("env/lab-$index.png").use { BitmapFactory.decodeStream(it) }
         } catch (e: Exception) {
             null
-        }
-        val safe = bmp ?: Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also {
-            it.eraseColor(Color.rgb(128, 130, 134))
-        }
-        envBitmap = safe
-        envShader = BitmapShader(safe, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
+        } ?: return null
+        val pair = bmp to BitmapShader(bmp, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
+        labEnvs[index] = pair
+        return pair
     }
 
     private fun materialOrbShader(view: ShaderSurfaceView): RuntimeShader? {
@@ -109,8 +134,15 @@ internal class MaterialOrbMaterial : ShaderMaterial {
 
     private fun setMaterialOrbUniforms(view: ShaderSurfaceView, materialOrb: RuntimeShader, w: Float, h: Float) {
         ensureMaterialOrbEnv(view)
-        envShader?.let { materialOrb.setInputShader("u_env", it) }
-        envBitmap?.let { materialOrb.setFloatUniform("u_envSize", it.width.toFloat(), it.height.toFloat()) }
+        // Runtime env switch (tuning lab): `repetition` >= 100 selects env/lab-N.png
+        // (N = repetition - 100). Otherwise each material keeps its default env.
+        val labIndex = view.repetition.toInt() - 100
+        val lab = if (labIndex >= 0) labEnv(view, labIndex) else null
+        val isMercury = view.orbMaterial >= 3.5
+        val boundShader = lab?.second ?: if (isMercury) mercuryEnvShader else envShader
+        val boundBitmap = lab?.first ?: if (isMercury) mercuryEnvBitmap else envBitmap
+        boundShader?.let { materialOrb.setInputShader("u_env", it) }
+        boundBitmap?.let { materialOrb.setFloatUniform("u_envSize", it.width.toFloat(), it.height.toFloat()) }
         materialOrb.setFloatUniform("u_time", view.currentTimeSeconds())
         materialOrb.setFloatUniform("u_speed", view.speed.toFloat())
         materialOrb.setFloatUniform("u_resolution", w, h)
@@ -126,6 +158,8 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         materialOrb.setFloatUniform("u_motionDetail", view.resolvedMotionDetail())
         materialOrb.setFloatUniform("u_motionSeed", view.motionSeed.toFloat())
         materialOrb.setFloatUniform("u_motionPeriod", view.motionPeriod.toFloat())
+        // Pseudo-HDR toggle rides the legacy `grain` slot (0 = off, 1 = on).
+        materialOrb.setFloatUniform("u_hdrBoost", view.grain.toFloat())
     }
 
     private fun drawMaterialOrb(view: ShaderSurfaceView, canvas: Canvas, w: Float, h: Float) {
@@ -189,6 +223,13 @@ internal class MaterialOrbMaterial : ShaderMaterial {
             // (screen Y grows downward, so sin(a) > 0 is the bottom half).
             val bottom = sin(a)
             if (bottom > 0f) r *= 1.0f + 0.018f * bottom * bottom
+            // Mercury: fundamental l=2 droplet mode — slow prolate/oblate
+            // oscillation with the physical time asymmetry (second harmonic),
+            // applied inward-only so the profile stays in the shader sphere.
+            if (view.orbMaterial >= 3.5) {
+                val m2 = 0.032f * (sin(phase * 0.35f) + 0.35f * sin(phase * 0.7f + 0.8f))
+                r *= 1f + m2 * (cos(2f * (a - phase * 0.05f)) - 1f)
+            }
             val x = cx + cos(a) * r
             val y = cy + sin(a) * r
             if (i == 0) {
@@ -223,7 +264,8 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         return when {
             view.orbMaterial < 0.5 -> 0.92f
             view.orbMaterial < 1.5 -> 0.45f
-            else -> 0.62f
+            view.orbMaterial < 3.5 -> 0.62f
+            else -> 0.90f
         }
     }
 
@@ -246,7 +288,8 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         val baseStrength = when {
             view.orbMaterial < 0.5 -> 30
             view.orbMaterial < 1.5 -> 20
-            else -> 24
+            view.orbMaterial < 3.5 -> 24
+            else -> 28
         }
         // Rasterize the silhouette, then run it down and back up the pyramid:
         // 96 -> 48 -> 24 -> 12 -> 24 -> 48 -> 96. Six filtered passes ≈ gaussian.

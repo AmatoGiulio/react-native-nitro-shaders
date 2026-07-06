@@ -66,6 +66,15 @@ export const MOTION_DEFAULTS: Record<MaterialName, ResolvedMotion> = {
     motionSeed: 0,
     motionPeriod: 0,
   },
+  mercury: {
+    motionType: 2,
+    motionSpeed: 0.5,
+    motionAmp: 0.5,
+    motionWarp: 0.42,
+    motionDetail: 0.5,
+    motionSeed: 0,
+    motionPeriod: 0,
+  },
 }
 
 export function resolveMotion(motion: Motion | undefined, material: MaterialName): ResolvedMotion {

@@ -2,23 +2,45 @@ import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import {
   GestureResponderEvent,
+  Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
   SafeAreaView,
 } from 'react-native';
-import { MaterialOrb } from 'react-native-nitro-shaders';
+import {
+  MaterialOrb,
+  MATERIAL_ORB_PRESETS,
+  type MaterialOrbMaterial,
+} from 'react-native-nitro-shaders';
 
-const DEFAULTS = {
-  speed: 0.8,
-  wobble: 0.72,
-  distortion: 0.56,
-  detail: 1,
-  materialColor: 0.42,
-};
+const MATERIALS: MaterialOrbMaterial[] = ['metal', 'water', 'iridescent', 'aura', 'mercury'];
 
-type ParamKey = keyof typeof DEFAULTS;
+// Runtime-switchable environments (must mirror native assets env/lab-N.png).
+const ENVS = [
+  require('./assets/envs/lab-0.png'),
+  require('./assets/envs/lab-1.png'),
+  require('./assets/envs/lab-2.png'),
+  require('./assets/envs/lab-3.png'),
+  require('./assets/envs/lab-4.png'),
+  require('./assets/envs/lab-5.png'),
+  require('./assets/envs/lab-6.png'),
+];
+
+function presetParams(material: MaterialOrbMaterial) {
+  const p = MATERIAL_ORB_PRESETS[material];
+  return {
+    speed: p.speed,
+    wobble: p.wobble,
+    distortion: p.distortion,
+    detail: p.detail,
+    materialColor: p.materialColor,
+  };
+}
+
+type ParamKey = keyof ReturnType<typeof presetParams>;
 
 const PARAMS: { key: ParamKey; label: string; min: number; max: number }[] = [
   { key: 'speed', label: 'Speed', min: 0, max: 2 },
@@ -72,23 +94,55 @@ function Slider({
 }
 
 export default function App() {
-  const [params, setParams] = useState(DEFAULTS);
+  const [material, setMaterial] = useState<MaterialOrbMaterial>('mercury');
+  const [params, setParams] = useState(presetParams('mercury'));
+  const [envIndex, setEnvIndex] = useState<number | undefined>(undefined);
+  const [hdr, setHdr] = useState(true);
+
+  const switchMaterial = (m: MaterialOrbMaterial) => {
+    setMaterial(m);
+    setParams(presetParams(m));
+  };
 
   return (
     <SafeAreaView style={styles.safearea}>
       <View style={styles.container}>
+        <View style={styles.tabs}>
+          {MATERIALS.map((m) => (
+            <Pressable key={m} onPress={() => switchMaterial(m)}>
+              <View style={[styles.tab, material === m && styles.tabSelected]}>
+                <Text style={[styles.tabText, material === m && styles.tabTextSelected]}>
+                  {m}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
         <View style={styles.orbArea}>
           <MaterialOrb
-            material="metal"
+            material={material}
             speed={params.speed}
             wobble={params.wobble}
             distortion={params.distortion}
             detail={params.detail}
             materialColor={params.materialColor}
+            environment={envIndex}
+            hdr={hdr}
             style={styles.surface}
           />
-          <Text style={styles.label}>metal</Text>
         </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.envRow}>
+          <Pressable onPress={() => setEnvIndex(undefined)}>
+            <View style={[styles.envThumb, styles.envAuto, envIndex === undefined && styles.envSelected]}>
+              <Text style={styles.envAutoText}>auto</Text>
+            </View>
+          </Pressable>
+          {ENVS.map((src, i) => (
+            <Pressable key={i} onPress={() => setEnvIndex(i)}>
+              <Image source={src} style={[styles.envThumb, envIndex === i && styles.envSelected]} />
+            </Pressable>
+          ))}
+        </ScrollView>
         <View style={styles.panel}>
           {PARAMS.map((p) => (
             <Slider
@@ -100,9 +154,17 @@ export default function App() {
               onChange={(v) => setParams((prev) => ({ ...prev, [p.key]: v }))}
             />
           ))}
-          <Pressable onPress={() => setParams(DEFAULTS)}>
-            <Text style={styles.reset}>Reset to defaults</Text>
-          </Pressable>
+          <View style={styles.panelFooter}>
+            <Pressable style={styles.hdrRow} onPress={() => setHdr((v) => !v)}>
+              <View style={[styles.checkbox, hdr && styles.checkboxOn]}>
+                {hdr && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <Text style={styles.hdrLabel}>HDR boost</Text>
+            </Pressable>
+            <Pressable onPress={() => setParams(presetParams(material))}>
+              <Text style={styles.reset}>Reset to defaults</Text>
+            </Pressable>
+          </View>
         </View>
         <StatusBar style="auto" />
       </View>
@@ -122,6 +184,29 @@ const styles = StyleSheet.create({
     justifyContent: 'space-evenly',
     paddingVertical: 24,
   },
+  tabs: {
+    flexDirection: 'row',
+    backgroundColor: '#e8eaf0',
+    borderRadius: 12,
+    padding: 3,
+    gap: 2,
+  },
+  tab: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 9,
+  },
+  tabSelected: {
+    backgroundColor: '#ffffff',
+  },
+  tabText: {
+    color: '#5c6270',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tabTextSelected: {
+    color: '#15181f',
+  },
   orbArea: {
     alignItems: 'center',
     gap: 8,
@@ -130,10 +215,31 @@ const styles = StyleSheet.create({
     width: 300,
     height: 300,
   },
-  label: {
-    color: '#15181f',
-    fontSize: 13,
+  envRow: {
+    maxHeight: 56,
+    flexGrow: 0,
+    paddingHorizontal: 16,
+  },
+  envThumb: {
+    width: 88,
+    height: 44,
+    borderRadius: 8,
+    marginRight: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  envAuto: {
+    backgroundColor: '#e2e5ec',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  envAutoText: {
+    color: '#5c6270',
+    fontSize: 12,
     fontWeight: '600',
+  },
+  envSelected: {
+    borderColor: '#2f80ff',
   },
   panel: {
     width: '90%',
@@ -142,6 +248,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 10,
+  },
+  panelFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 2,
+  },
+  hdrRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: '#b6bcc9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxOn: {
+    backgroundColor: '#2f80ff',
+    borderColor: '#2f80ff',
+  },
+  checkmark: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  hdrLabel: {
+    color: '#15181f',
+    fontSize: 13,
   },
   sliderRow: {
     flexDirection: 'row',
@@ -197,7 +336,5 @@ const styles = StyleSheet.create({
     color: '#2f80ff',
     fontSize: 13,
     fontWeight: '600',
-    textAlign: 'center',
-    paddingTop: 4,
   },
 });
