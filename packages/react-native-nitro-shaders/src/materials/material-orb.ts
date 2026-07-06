@@ -1,6 +1,6 @@
 // Public orb material names. These match the target architecture (MaterialName);
 // mode index maps to u_orbMaterial in material-orb.agsl.
-export type MaterialOrbMaterial = 'metal' | 'water' | 'iridescent' | 'aura' | 'mercury'
+export type MaterialOrbMaterial = 'metal' | 'water' | 'iridescent' | 'aura' | 'mercury' | 'glass'
 
 // Per-material parameter preset, observed from the references
 // (docs/references/materials/ + the @jc_builds reference video).
@@ -45,12 +45,14 @@ export const ORB_MATERIALS: Record<MaterialOrbMaterial, OrbMaterialDefinition> =
   water: {
     name: 'water',
     orbMaterial: 1,
+    // Live-tunable in the lab: wobble=wave height, distortion=flow, detail=frequency/
+    // definition, materialColor=frost (0 clear glass → 1 frosted). Default = clear.
     preset: {
       speed: 1.39,
       wobble: 0.6,
       distortion: 0.55,
       detail: 1.43,
-      materialColor: 0.55,
+      materialColor: 0.2,
     },
   },
   iridescent: {
@@ -78,11 +80,28 @@ export const ORB_MATERIALS: Record<MaterialOrbMaterial, OrbMaterialDefinition> =
   mercury: {
     name: 'mercury',
     orbMaterial: 4,
+    // Shares glass's shape + motion (wave-band surface, smooth wave silhouette).
     preset: {
-      speed: 0.5,
-      wobble: 0.5,
-      distortion: 0.42,
-      detail: 0.5,
+      speed: 0.4,
+      wobble: 0.4,
+      distortion: 0.5,
+      detail: 0.28,
+      materialColor: 0.5,
+    },
+  },
+  // glass: BlenderKit "Dispersion glass shader" (EEVEE). Colorless glass refracting
+  // the studio HDRI with chromatic dispersion; swirl from the perturbed normal.
+  // See docs/references/blender-dispersion-glass.md. Preset maps: distortion→swirl
+  // (Pattern distortion 20), detail→broad folds (Displacement, not fine), materialColor
+  // →dispersion roughness (0.3).
+  glass: {
+    name: 'glass',
+    orbMaterial: 5,
+    preset: {
+      speed: 0.4,
+      wobble: 0.4,
+      distortion: 0.5,
+      detail: 0.28,
       materialColor: 0.5,
     },
   },

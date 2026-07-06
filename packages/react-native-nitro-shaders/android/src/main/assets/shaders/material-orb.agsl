@@ -26,6 +26,9 @@ uniform float u_motionDetail;
 uniform float u_motionSeed;
 uniform float u_motionPeriod;
 uniform float u_hdrBoost;   // 1 = pseudo-HDR highlight expansion, 0 = plain LDR
+uniform float u_intensity;  // water: body density (volume absorption strength), live
+uniform float u_softness;   // water: smooth-patch amount (0 = mostly chop, 1 = mostly smooth), live
+uniform float u_envRot;     // horizontal rotation of the environment (radians), live
 
 float sat(float v) { return clamp(v, 0.0, 1.0); }
 
@@ -88,6 +91,9 @@ float3 rotate3(float3 v, float ax, float ay) {
 
 float3 sampleEnv(float3 dir) {
     dir = normalize(dir);
+    // Horizontal env rotation (move the HDRI): rotate the sample direction around Y.
+    float ca = cos(u_envRot), sa = sin(u_envRot);
+    dir = float3(dir.x * ca - dir.z * sa, dir.y, dir.x * sa + dir.z * ca);
     float u = atan(dir.z, dir.x) * 0.1591549 + 0.5;
     float v = acos(clamp(dir.y, -1.0, 1.0)) * 0.3183099;
     float2 px = float2(fract(u) * u_envSize.x, clamp(v, 0.0, 1.0) * u_envSize.y);
@@ -187,6 +193,82 @@ float rimFoldHeight(float2 q, float phase, float amp, float warp, float density)
     return rimDeviation(aa, phase, amp, warp, density) * smoothstep(0.45, 1.05, length(q));
 }
 
+// Glass swirl height field — mimics Blender's Wave Texture (Bands, Sine) warped by a
+// distortion field (Pattern distortion up to 20). Bands of ridges, swirled by noise,
+// instead of the blobby fbm used by the other materials. Slowly rotates for 3D life.
+float glassBands(float3 sp, float t, float warp, float detail) {
+    float3 q = rotate3(sp, t * 0.08 + u_motionSeed, t * 0.11);
+    float scale = mix(3.0, 7.0, sat(detail));
+    float distort = mix(4.0, 20.0, sat(warp));   // Blender Pattern distortion (0..20)
+    float w = fbm3(q * 1.3);                       // distortion source
+    float bands = sin((q.x + q.y * 0.5 + q.z * 0.3) * scale + w * distort);
+    return 0.5 + 0.5 * bands;
+}
+
+// Water gel micro-ripples — dense fine waves (Gel shader Noise Texture: 3D fBM,
+// Scale 2, Detail 2, Roughness 0.5, Distortion 5). High base frequency + low-freq
+// domain warp gives interference-like ripples instead of the broad fbm blobs.
+// Evolves in place (slow rotation + Lissajous morph), no new motion params.
+// --- Gradient (Perlin-style) noise, to match Blender's Noise Texture basis ---
+// (Blender uses gradient noise, not value noise; fbm3 above is value noise and reads
+// blobby/different. This gives the same organic character as the Gel's Noise Texture.)
+float3 hash33(float3 p) {
+    p = float3(dot(p, float3(127.1, 311.7, 74.7)),
+               dot(p, float3(269.5, 183.3, 246.1)),
+               dot(p, float3(113.5, 271.9, 124.6)));
+    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+
+float gnoise(float3 p) {
+    float3 i = floor(p);
+    float3 f = fract(p);
+    float3 u = f * f * (3.0 - 2.0 * f);
+    float n = mix(
+        mix(mix(dot(hash33(i + float3(0,0,0)), f - float3(0,0,0)),
+                dot(hash33(i + float3(1,0,0)), f - float3(1,0,0)), u.x),
+            mix(dot(hash33(i + float3(0,1,0)), f - float3(0,1,0)),
+                dot(hash33(i + float3(1,1,0)), f - float3(1,1,0)), u.x), u.y),
+        mix(mix(dot(hash33(i + float3(0,0,1)), f - float3(0,0,1)),
+                dot(hash33(i + float3(1,0,1)), f - float3(1,0,1)), u.x),
+            mix(dot(hash33(i + float3(0,1,1)), f - float3(0,1,1)),
+                dot(hash33(i + float3(1,1,1)), f - float3(1,1,1)), u.x), u.y), u.z);
+    return 0.5 + 0.5 * n;   // → 0..1
+}
+
+// Blender fBM: octaves (Detail), gain = Roughness, lacunarity 2.
+float gfbm(float3 p, float octaves, float roughness) {
+    float v = 0.0, amp = 1.0, maxv = 0.0;
+    for (int i = 0; i < 5; i++) {
+        if (float(i) >= octaves) { break; }
+        v += amp * gnoise(p);
+        maxv += amp;
+        p *= 2.0;
+        amp *= roughness;
+    }
+    return v / max(maxv, 0.0001);
+}
+
+// Blender "Noise Texture" (fBM) with Distortion: the input coordinate is displaced by
+// a gradient-noise vector before evaluation — exactly the node's Distortion behaviour.
+// Gel values: Scale 3, Detail 3, Roughness 0.5, Distortion 5. detail/warp tune around them.
+float waterRipples(float3 sp, float t, float warp, float detail) {
+    float3 q = rotate3(sp, t * 0.10 + u_motionSeed, t * 0.14);
+    q += float3(sin(t * 0.21), sin(t * 0.17 + 2.1), sin(t * 0.13 + 4.2)) * 0.30;
+
+    // EXACT Blender "Noise Texture" (verified against the raw pattern plugged to Surface):
+    // fBM on the object-space Position, Scale 2.0, Detail 2.0 (→ 2 octaves = SMOOTH marble,
+    // not fine chop), Roughness 0.5, Distortion 5.0 (domain-warp → marbled swirls).
+    float scale = 2.0 * mix(0.7, 1.4, sat(detail * 0.5));    // Blender Scale 2.0
+    float3 p = q * scale;
+    float distort = 5.0 * mix(0.5, 1.0, sat(warp));          // Blender Distortion 5.0
+    float3 dp = p + distort * float3(
+        gnoise(p + float3(13.5, 7.2, 2.1)) * 2.0 - 1.0,
+        gnoise(p + float3(1.3, 17.2, 9.4)) * 2.0 - 1.0,
+        gnoise(p + float3(5.7, 3.1, 19.7)) * 2.0 - 1.0
+    );
+    return gfbm(dp, 2.0, 0.5);   // Detail 2 (2 octaves), Roughness 0.5 → soft marble
+}
+
 half4 main(float2 fragCoord) {
     float2 res = max(u_resolution, float2(1.0));
     float size = min(res.x, res.y);
@@ -215,7 +297,7 @@ half4 main(float2 fragCoord) {
 
     // Rim-fold coupling: bend N by the gradient of the silhouette height field so
     // each border indentation continues inward as a crease (matches native Path).
-    float density = (mode < 0.5) ? 0.92 : ((mode < 1.5) ? 0.45 : ((mode < 3.5) ? 0.62 : 0.90));
+    float density = (mode < 0.5) ? 0.92 : ((mode < 1.5) ? 0.45 : ((mode < 3.5) ? 0.62 : ((mode < 4.5) ? 0.90 : 0.45)));
     float rphase = t;
     float e2 = 0.02;
     float hC = rimFoldHeight(p, rphase, amp, warp, density);
@@ -223,7 +305,11 @@ half4 main(float2 fragCoord) {
     float hY = rimFoldHeight(p + float2(0.0, e2), rphase, amp, warp, density) - hC;
     float3 rimGrad = float3(hX, hY, 0.0) / e2;
     float3 rimTang = rimGrad - dot(rimGrad, baseN) * baseN;
-    N = normalize(N - rimTang * 3.2);
+    // Water (mode 1) uses the smooth gel silhouette (native Path smoothSilhouette),
+    // not the lobe/dent profile, so skip rim-fold coupling to avoid phantom creases —
+    // same criterion as glass/mercury.
+    bool smoothSilhouette = (mode >= 0.5 && mode < 1.5);
+    if (!smoothSilhouette) { N = normalize(N - rimTang * 3.2); }
 
     float3 V = float3(0.0, 0.0, 1.0);
     float ndv = sat(dot(N, V));
@@ -243,20 +329,65 @@ half4 main(float2 fragCoord) {
         float3 irid = 0.5 + 0.5 * cos(6.2831 * (pow(1.0 - ndv, 3.0) * 1.4 + float3(0.0, 0.33, 0.67)));
         color = mix(color, color * irid, smoothstep(0.6, 0.98, 1.0 - ndv) * 0.35);
     } else if (mode < 1.5) {
-        // ===== WATER / GLASS — dielectric, transmission + reflection =====
-        float ior = 1.33;
-        float f0 = 0.02;
-        float fres = f0 + (1.0 - f0) * pow(1.0 - ndv, 5.0);
-        float3 refl = sampleEnv(R);
-        float3 T = refract(-V, N, 1.0 / ior);
-        float3 through = sampleEnvSoft(T, 0.28);
-        float3 bodyTint = mix(float3(0.70, 0.86, 0.98), float3(0.58, 0.82, 0.99), warm);
-        float thickness = mix(0.05, 0.40, dd);
-        float3 transmitted = mix(through, through * bodyTint, thickness);
-        color = mix(transmitted, refl, sat(fres * 1.25));
-        float lum = max(refl.r, max(refl.g, refl.b));
-        color += refl * smoothstep(0.72, 1.0, lum) * 0.7;   // sharp window highlights
-        color += float3(0.85, 0.96, 1.0) * pow(1.0 - ndv, 2.4) * 0.5; // rim
+        // ===== WATER / GEL — clear glass/gel, transmission + reflection =====
+        // Blender "Gel shader" ground truth: transparent smooth glass, roughness ~0.03,
+        // refraction IOR ~1.47, very faint cyan Volume Absorption. Reads as clean glass
+        // showing the sky behind, NOT full-blue plastic water.
+        // Dedicated fine-ripple normal (not the shared broad-fbm N): dense micro-waves
+        // like a rippled water surface. Modest bump — water, not hard ridges.
+        float we = 0.05;
+        float wh = waterRipples(sp, t, warp, detail);
+        float whx = waterRipples(sp + float3(we, 0.0, 0.0), t, warp, detail) - wh;
+        float why = waterRipples(sp + float3(0.0, we, 0.0), t, warp, detail) - wh;
+        float whz = waterRipples(sp + float3(0.0, 0.0, we), t, warp, detail) - wh;
+        float3 wGrad = float3(whx, why, whz) / we;
+        float3 wTang = wGrad - dot(wGrad, baseN) * baseN;
+        // Not all of the surface is rippled: a large SMOOTH glassy zone, with the
+        // current concentrated elsewhere (like the Blender ref). Low-freq mask over the
+        // sphere gates the ripple amplitude — smooth where the mask is low.
+        float3 mp = rotate3(sp, t * 0.05 + u_motionSeed, t * 0.07);
+        // Faithful default = marble everywhere (Smooth=0 → mask 1). Smooth>0 introduces
+        // clear glassy patches by masking the pattern down to 0 in low-mask zones.
+        float rippleMask = mix(1.0, smoothstep(0.30, 0.66, gnoise(mp * 1.2 + 4.0)), u_softness);
+        // Surface is nearly smooth (Blender displacement 0.065): gentle bump — the strong
+        // IOR refraction magnifies these small perturbations into the visible swirls.
+        // Vertical gradient: full marble on top, smooth clear glass toward the belly
+        // (the bottom refracts the calm sea cleanly, like the Blender ref). wobble tunes it.
+        float vGrad = smoothstep(-0.75, 0.15, baseN.y);
+        float3 Nw = normalize(baseN - wTang * (0.14 + amp * 0.45) * rippleMask * vGrad);
+        float ndvW = sat(dot(Nw, V));
+        float3 Rw = reflect(-V, Nw);
+
+        // ---- Faithful port of the Blender "Gel shader" surface ----
+        // Base Color: Noise → Mix(A #68F3FF cyan, B #7277FF blue). Tints the body.
+        float3 gelA = float3(0.408, 0.953, 1.0);   // #68F3FF
+        float3 gelB = float3(0.447, 0.467, 1.0);   // #7277FF
+        float3 baseCol = mix(gelA, gelB, sat(wh));
+
+        // Principled BSDF (IOR 1.473, transmission): refracted sky, tinted by base color,
+        // with Volume Absorption (cyan, Blender Density 0.4 — subtle; Density slider scales it).
+        float3 T = refract(-V, Nw, 1.0 / 1.473);
+        float3 through = sampleEnvSoft(T, mix(0.02, 0.22, warm));   // Color slider = frost
+        float pathLen = mix(0.10, 1.0, dd);
+        float3 absorb = (float3(1.0) - baseCol) * (0.4 * u_intensity);   // 0.4 = Blender density
+        float3 principled = through * exp(-absorb * pathLen * 2.0);
+        principled *= mix(float3(1.0), baseCol, 0.30);             // Principled base-colour tint
+
+        // Glass BSDF (IOR 1.8, roughness 0): reflection, dominant at the grazing edge.
+        float3 glass = sampleEnvSoft(Rw, 0.08);
+
+        // Mix Shader by Fresnel (IOR 1.45) through a sharp Color Ramp (Pos 0.041):
+        // face-on → Principled transmission; grazing edge → Glass reflection.
+        float fres = pow(1.0 - ndvW, 5.0);
+        float fresMix = smoothstep(0.0, 0.14, fres + 0.02);
+        color = mix(principled, glass, fresMix);
+
+        // Sun/sky glints on the wave crests → sea sparkle.
+        float lum = max(glass.r, max(glass.g, glass.b));
+        color += glass * smoothstep(0.78, 1.0, lum) * 0.35;
+        // Light from above (Blender lighting): top of the sphere brighter, belly darker.
+        float topLight = smoothstep(-0.7, 0.9, baseN.y);
+        color *= mix(0.86, 1.12, topLight);
     } else if (mode < 2.5) {
         // ===== IRIDESCENT — thin-film over a clear dielectric (soap bubble) =====
         float fres = pow(1.0 - ndv, 2.0);
@@ -407,15 +538,21 @@ half4 main(float2 fragCoord) {
 
         color += (hash21(fragCoord + u_time) - 0.5) / 255.0;
         return half4(half3(clamp(color, 0.0, 1.0)), 1.0);
-    } else {
+    } else if (mode < 4.5) {
         // ===== MERCURY — dense liquid-metal blob (realistic quicksilver) =====
         // Surface tension: only broad, smooth undulations (no fine detail), moving
         // slow and heavy. Near-perfect mirror with the lead-silver tint of mercury.
-        // Deep smooth bulges (strong bump, low frequency) + a HARD mirror: liquid
-        // metal reads from crisp reflected shapes, soft gradients read as gas.
-        float3 Nm = perturbNormal3(sp, baseN, t * 0.55, warp, detail * 0.35, amp);
-        // keep the rim-fold coupling so the silhouette creases continue inward
-        Nm = normalize(Nm - rimTang * 3.2);
+        // Deep smooth bulges + a HARD mirror: liquid metal reads from crisp reflected
+        // shapes. Mercury shares glass's wave-band surface + smooth wave silhouette
+        // (no rim-fold coupling: that matches the lobe/dent Path, not the wave one).
+        float me = 0.05;
+        float mh = glassBands(sp, t, warp, detail);
+        float mhx = glassBands(sp + float3(me, 0.0, 0.0), t, warp, detail) - mh;
+        float mhy = glassBands(sp + float3(0.0, me, 0.0), t, warp, detail) - mh;
+        float mhz = glassBands(sp + float3(0.0, 0.0, me), t, warp, detail) - mh;
+        float3 mGrad = float3(mhx, mhy, mhz) / me;
+        float3 mTang = mGrad - dot(mGrad, baseN) * baseN;
+        float3 Nm = normalize(baseN - mTang * (0.5 + amp * 0.8));
         float ndvM = sat(dot(Nm, V));
         float3 Rm = reflect(-V, Nm);
         float3 tint = float3(0.76, 0.765, 0.775); // mercury: near-neutral lead-silver
@@ -432,6 +569,57 @@ half4 main(float2 fragCoord) {
         color = mix(color, color * color * (3.0 - 2.0 * color), 0.45);
         color += (hash21(fragCoord + u_time) - 0.5) / 255.0;
         return half4(half3(clamp(color, 0.0, 1.0)), 1.0);
+    } else {
+        // ===== GLASS — dispersion glass (BlenderKit "Dispersion glass shader", EEVEE) =====
+        // Colorless glass refracting the studio HDRI. The black/white "marble" IS the
+        // environment seen through the swirled surface (bright top → white, dark
+        // surround → black). Chromatic dispersion: each RGB channel refracts at a
+        // slightly different IOR (Blender: 1.40 / 1.15 / 1.50 around a 1.45 base).
+        // Swirl comes from the perturbed normal N (distortion slider → warp).
+        // Ref: docs/references/blender-dispersion-glass.md
+        // Glass-specific normal: wave-band swirl (NOT the shared fbm folds), so the
+        // surface reads like the Blender Wave Texture displacement.
+        float ge = 0.05;
+        float gh = glassBands(sp, t, warp, detail);
+        float ghx = glassBands(sp + float3(ge, 0.0, 0.0), t, warp, detail) - gh;
+        float ghy = glassBands(sp + float3(0.0, ge, 0.0), t, warp, detail) - gh;
+        float ghz = glassBands(sp + float3(0.0, 0.0, ge), t, warp, detail) - gh;
+        float3 gGrad = float3(ghx, ghy, ghz) / ge;
+        float3 gTang = gGrad - dot(gGrad, baseN) * baseN;
+        float3 Ng = normalize(baseN - gTang * (0.5 + amp * 0.8));
+        // No rim-fold coupling here: glass uses a smooth wave silhouette (native Path
+        // mode 5), not the shared lobe/dent profile, so rimTang would carve phantom creases.
+        float ndvG = sat(dot(Ng, V));
+        float3 Rg = reflect(-V, Ng);
+
+        float iorBase = 1.45;
+        float disp = 0.05 * (0.4 + warp);                 // IOR spread → chromatic edge
+        float f0 = 0.04;                                   // ~IOR 1.5 dielectric
+        float fres = f0 + (1.0 - f0) * pow(1.0 - ndvG, 5.0);
+        // Frosted glass: heavy blur averages the env into a soft, milky tint (this is
+        // what makes the Blender result read as frosted lavender, not polished chrome).
+        float rough = 0.30 + 0.45 * warm;                  // dispersion/frost (materialColor)
+        // per-channel refraction (dispersion): tint the sample to its own channel
+        float3 Tr = refract(-V, Ng, 1.0 / (iorBase - disp));
+        float3 Tg = refract(-V, Ng, 1.0 / iorBase);
+        float3 Tb = refract(-V, Ng, 1.0 / (iorBase + disp));
+        float3 through = float3(
+            sampleEnvSoft(Tr, rough).r,
+            sampleEnvSoft(Tg, rough).g,
+            sampleEnvSoft(Tb, rough).b
+        );
+        // Reflection is soft and minor — frosted glass barely mirrors.
+        float3 refl = sampleEnvSoft(Rg, 0.15 + 0.30 * warm);
+        color = mix(through, refl, sat(fres * 0.5));
+        // Low contrast: pull toward the blurred env mean and lift the blacks, so the
+        // surface never goes pure black (frosted glass keeps the ambient tint).
+        color = mix(color, through, 0.25);
+        color = color * 0.85 + 0.06;
+        // Soft window bloom only (no crisp mirror highlight).
+        float lum = max(refl.r, max(refl.g, refl.b));
+        color += refl * smoothstep(0.82, 1.0, lum) * 0.18;
+        // gentle grazing rim
+        color += float3(0.90, 0.94, 1.0) * pow(1.0 - ndvG, 3.5) * 0.18;
     }
 
     color = color / (color + 0.55) * 1.55;   // soft tonemap

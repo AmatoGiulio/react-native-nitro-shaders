@@ -14,6 +14,12 @@ export type MaterialOrbProps = {
   distortion?: number
   detail?: number
   materialColor?: number
+  /** water/gel body density (Volume Absorption strength). Rides the `intensity` slot. */
+  density?: number
+  /** water/gel smooth-patch amount (0 = mostly rippled, 1 = mostly smooth glass). Rides `softness`. */
+  smooth?: number
+  /** horizontal rotation of the environment in radians (move the HDRI). Rides `angle`. */
+  envRot?: number
   /** Runtime environment override: index of assets env/lab-N.png. Omit for the material default. */
   environment?: number
   /** Pseudo-HDR highlight expansion on the reflected env (default true). */
@@ -45,6 +51,9 @@ export function MaterialOrb(props: MaterialOrbProps) {
     distortion = resolvedMotion.motionWarp,
     detail = resolvedMotion.motionDetail,
     materialColor = preset.materialColor,
+    density = 1.0,
+    smooth = 0.0,
+    envRot = 0,
     environment,
     hdr = true,
     animated = true,
@@ -66,9 +75,17 @@ export function MaterialOrb(props: MaterialOrbProps) {
       materialColor={materialColor}
       // Lab env switch rides the legacy `repetition` slot (offset +100) until the
       // material API stabilizes — see HANDOFF declared debt.
-      repetition={environment !== undefined ? environment + 100 : undefined}
+      // 0 (not undefined) means "material default env": native reads labIndex =
+      // repetition-100 < 0 → falls back to the per-material default. Passing undefined
+      // sends null to the non-null Nitro prop and crashes.
+      repetition={environment !== undefined ? environment + 100 : 0}
       // Pseudo-HDR toggle rides the legacy `grain` slot (same declared debt).
       grain={hdr ? 1 : 0}
+      // water live-tuning on legacy liquidMetal slots: density→intensity, smooth→softness,
+      // envRot→angle (env rotation).
+      intensity={density}
+      softness={smooth}
+      angle={envRot}
       motionType={resolvedMotion.motionType}
       motionSpeed={speed}
       motionAmp={wobble}

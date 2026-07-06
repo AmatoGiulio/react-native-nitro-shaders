@@ -2,6 +2,44 @@
 
 Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a fine sessione.
 
+## [2026-07-06] — Fase materiali — glass nuovo, mercury rivisto, water→gel, env CC0
+- **Fix build Android example**: namespace/applicationId allineati a `com.anonymous.example`
+  (era `com.example` → `R`/`BuildConfig` unresolved); rimosso BOM e autolinking.json stantio.
+- **Fix crash lab env**: `MaterialOrb` passava `repetition=undefined` (→ null su prop Nitro
+  non-null) quando si tornava all'env "auto"; ora passa `0` (= env default del material).
+- **glass (mode 5, nuovo)**: dispersion glass ispirato al BlenderKit "Dispersion glass shader"
+  (EEVEE). Rifrazione env con dispersione RGB per-canale, superficie a bande (`glassBands`),
+  silhouette liscia dedicata. Env di default `glass-env.png` = Poly Haven wooden_studio_08 (CC0).
+  Ground truth documentata in `docs/references/blender-dispersion-glass.md`.
+- **mercury**: rivisto per condividere forma + motion di glass (silhouette liscia a onde,
+  relief `glassBands`); mantiene la resa specchio liquido lead-silver. Rimossa la vecchia
+  silhouette pebble/l=2 per mercury.
+- **water → gel (mode 1)**: ridisegnato sul "Gel shader" Blender di Giulio. Vetro trasparente
+  IOR 1.473 + guscio glass IOR 1.8 ai bordi, tinta ciano tenue (Volume Absorption 0.4),
+  superficie a onde fBM fedele alla Noise Texture (Scale 2, Detail 2, Distortion 5) via
+  `waterRipples`, silhouette liscia. Movimento water invariato. Env di default `water-env.png`
+  = Poly Haven qwantani_dawn_puresky (CC0).
+- **Env HDRI aggiunti** (PNG equirect 1024×512): lab-7 studio, lab-8 mercury, lab-9 glass
+  (wooden_studio_08 CC0), lab-10 hangar_interior (CC0), lab-11 qwantani_dawn_puresky (CC0),
+  lab-12 sunset-sea, lab-13 calm-sea, lab-14 purple-haze (lab-12/13/14 asset BlendKit forniti
+  da Giulio — SOLO SVILUPPO, licenza da verificare). "auto" ripristina il default per-material.
+- **water finalizzato — pattern fedele alla Noise Texture reale**: dopo aver isolato la noise
+  pura in Blender (plug → Surface), corretto il tipo di trama: **marmo morbido** (fBM Scale 2,
+  Detail 2 = 2 ottave, Distortion 5, gradient/Perlin noise `gnoise`/`gfbm`), NON chop/vortici.
+  Superficie quasi liscia (displacement 0.065) + gradiente verticale (marmo in alto, pancia
+  liscia). Base Color = Mix(ciano #68F3FF, blu #7277FF) dalla noise; Mix Shader Glass1.8/
+  Principled1.473 via Fresnel; Volume Absorption density 0.4 (Beer-Lambert).
+- **Slider nativi + tuning live**: installato `@react-native-community/slider` (Expo SDK57),
+  sostituito lo slider custom. Aggiunti 3 knob live riusando prop legacy dello spec (NO codegen):
+  Density→`intensity`, Smooth→`softness`, Env Rot→`angle` (rotazione env). Uniform shader
+  `u_intensity`/`u_softness`/`u_envRot`.
+- **Tentato e rimandato**: env come sfondo dietro la sfera (composite "in scena") — la view
+  nativa non è trasparente, va reso l'env come background NEL draw nativo. Rollback fatto.
+- **Doc**: `ASSET-LICENSES.md` aggiornato; `blender-dispersion-glass.md` creato.
+- Processo: implementazioni delegate a developer subagent + tuning diretto dell'orchestratore;
+  svolta metodologica = isolare la Noise pura in Blender invece di indovinare il pattern a occhio.
+- **DA VALIDARE da Giulio su device**: resa finale water/glass/mercury. HDR boost OFF per water/glass.
+
 ## [da compilare] — Setup — Creazione governance iniziale
 - Creati CLAUDE.md, AGENTS.md, STACK.md, CHANGELOG.md, HANDOFF.md
 - Nome pacchetto deciso: react-native-nitro-shaders

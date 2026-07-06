@@ -69,6 +69,14 @@ internal class MaterialOrbMaterial : ShaderMaterial {
     private var envShader: BitmapShader? = null
     private var mercuryEnvBitmap: Bitmap? = null
     private var mercuryEnvShader: BitmapShader? = null
+    // glass refracts a real wooden studio HDRI (Poly Haven "wooden_studio_08", CC0),
+    // the same env used in the Blender dispersion-glass ground truth.
+    private var glassEnvBitmap: Bitmap? = null
+    private var glassEnvShader: BitmapShader? = null
+    // water/gel refracts a dawn sky HDRI (Poly Haven "qwantani_dawn_puresky", CC0),
+    // the Blender Gel-shader ground-truth env — warm horizon + cool sky.
+    private var waterEnvBitmap: Bitmap? = null
+    private var waterEnvShader: BitmapShader? = null
     // Runtime-switchable lab environments (env/lab-N.png), loaded lazily.
     private val labEnvs = HashMap<Int, Pair<Bitmap, BitmapShader>>()
 
@@ -94,6 +102,12 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         val mercuryEnv = loadEnvBitmap(view, "env/mercury-env.png")
         mercuryEnvBitmap = mercuryEnv
         mercuryEnvShader = BitmapShader(mercuryEnv, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
+        val glassEnv = loadEnvBitmap(view, "env/glass-env.png")
+        glassEnvBitmap = glassEnv
+        glassEnvShader = BitmapShader(glassEnv, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
+        val waterEnv = loadEnvBitmap(view, "env/water-env.png")
+        waterEnvBitmap = waterEnv
+        waterEnvShader = BitmapShader(waterEnv, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
     }
 
     private fun labEnv(view: ShaderSurfaceView, index: Int): Pair<Bitmap, BitmapShader>? {
@@ -138,9 +152,13 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         // (N = repetition - 100). Otherwise each material keeps its default env.
         val labIndex = view.repetition.toInt() - 100
         val lab = if (labIndex >= 0) labEnv(view, labIndex) else null
-        val isMercury = view.orbMaterial >= 3.5
-        val boundShader = lab?.second ?: if (isMercury) mercuryEnvShader else envShader
-        val boundBitmap = lab?.first ?: if (isMercury) mercuryEnvBitmap else envBitmap
+        val isWater = view.orbMaterial >= 0.5 && view.orbMaterial < 1.5
+        val isMercury = view.orbMaterial >= 3.5 && view.orbMaterial < 4.5
+        val isGlass = view.orbMaterial >= 4.5
+        val defaultShader = if (isMercury) mercuryEnvShader else if (isGlass) glassEnvShader else if (isWater) waterEnvShader else envShader
+        val defaultBitmap = if (isMercury) mercuryEnvBitmap else if (isGlass) glassEnvBitmap else if (isWater) waterEnvBitmap else envBitmap
+        val boundShader = lab?.second ?: defaultShader
+        val boundBitmap = lab?.first ?: defaultBitmap
         boundShader?.let { materialOrb.setInputShader("u_env", it) }
         boundBitmap?.let { materialOrb.setFloatUniform("u_envSize", it.width.toFloat(), it.height.toFloat()) }
         materialOrb.setFloatUniform("u_time", view.currentTimeSeconds())
@@ -160,6 +178,12 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         materialOrb.setFloatUniform("u_motionPeriod", view.motionPeriod.toFloat())
         // Pseudo-HDR toggle rides the legacy `grain` slot (0 = off, 1 = on).
         materialOrb.setFloatUniform("u_hdrBoost", view.grain.toFloat())
+        // water live-tuning: intensity → body density, softness → smooth-patch amount
+        // (legacy liquidMetal slots reused; declared debt).
+        materialOrb.setFloatUniform("u_intensity", view.intensity.toFloat())
+        materialOrb.setFloatUniform("u_softness", view.softness.toFloat())
+        // env horizontal rotation (move the HDRI) rides the legacy `angle` slot.
+        materialOrb.setFloatUniform("u_envRot", view.angle.toFloat())
     }
 
     private fun drawMaterialOrb(view: ShaderSurfaceView, canvas: Canvas, w: Float, h: Float) {
@@ -203,32 +227,45 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         // body (shading included) inflates and relaxes together.
         val globalBreath = orbBreath(phase)
 
+        // Smooth wax-blob silhouette (mercury mode 4 + glass mode 5 + water mode 1).
+        // Rounder, moved by slow low harmonic swells instead of the liquid-pebble
+        // notches + traveling dents, so it reads like the Blender dispersion-glass /
+        // gel sphere (wave displacement, no pressed-in creases). Water shares this
+        // smooth gel shape with mercury/glass.
+        val smoothSilhouette = view.orbMaterial >= 3.5 || (view.orbMaterial >= 0.5 && view.orbMaterial < 1.5)
         materialOrbPath.reset()
         for (i in 0 until points) {
             val a = (i.toDouble() / points.toDouble() * PI * 2.0).toFloat()
-            // Liquid-pebble profile (J reference): many short, shallow notches
-            // (higher harmonics 5/8/11) instead of broad balloon lobes.
-            var wave =
-                sin(a * 5.0f + phase * 0.20f) * 0.42f * breathe0 +
-                sin(a * 8.0f - phase * 0.16f + 1.2f) * 0.34f * breathe1 +
-                sin(a * (11.0f + density) + phase * 0.12f + 2.1f) * 0.24f * breathe2
-            // Bias inward: convex bulges are damped, concavities kept.
-            if (wave > 0f) wave *= 0.30f
-            var r = radius * globalBreath + lobeAmp * 0.62f * wave
-            // Localized traveling dents: narrow, like pressed-in creases.
-            r -= dentDepth * 0.72f * dentPulse0 * dentFalloff(a - dentAngle0, 0.30f)
-            r -= dentDepth * 0.72f * dentPulse1 * dentFalloff(a - dentAngle1, 0.24f)
-            r -= dentDepth * 0.55f * dentPulse2 * dentFalloff(a - dentAngle2, 0.38f)
-            // Gravity sag: the lower profile bulges slightly like a hanging drop
-            // (screen Y grows downward, so sin(a) > 0 is the bottom half).
             val bottom = sin(a)
-            if (bottom > 0f) r *= 1.0f + 0.018f * bottom * bottom
-            // Mercury: fundamental l=2 droplet mode — slow prolate/oblate
-            // oscillation with the physical time asymmetry (second harmonic),
-            // applied inward-only so the profile stays in the shader sphere.
-            if (view.orbMaterial >= 3.5) {
-                val m2 = 0.032f * (sin(phase * 0.35f) + 0.35f * sin(phase * 0.7f + 0.8f))
-                r *= 1f + m2 * (cos(2f * (a - phase * 0.05f)) - 1f)
+            val r: Float
+            if (smoothSilhouette) {
+                var sw =
+                    sin(a * 3.0f + phase * 0.16f) * 0.50f * breathe0 +
+                    sin(a * 5.0f - phase * 0.11f + 1.0f) * 0.30f * breathe1 +
+                    sin(a * 2.0f + phase * 0.08f + 2.4f) * 0.20f * breathe2
+                // Slight inward bias so the profile stays inside the shader sphere.
+                if (sw > 0f) sw *= 0.5f
+                var rr = radius * globalBreath + lobeAmp * 0.50f * sw
+                if (bottom > 0f) rr *= 1.0f + 0.020f * bottom * bottom
+                r = rr
+            } else {
+                // Liquid-pebble profile (J reference): many short, shallow notches
+                // (higher harmonics 5/8/11) instead of broad balloon lobes.
+                var wave =
+                    sin(a * 5.0f + phase * 0.20f) * 0.42f * breathe0 +
+                    sin(a * 8.0f - phase * 0.16f + 1.2f) * 0.34f * breathe1 +
+                    sin(a * (11.0f + density) + phase * 0.12f + 2.1f) * 0.24f * breathe2
+                // Bias inward: convex bulges are damped, concavities kept.
+                if (wave > 0f) wave *= 0.30f
+                var rr = radius * globalBreath + lobeAmp * 0.62f * wave
+                // Localized traveling dents: narrow, like pressed-in creases.
+                rr -= dentDepth * 0.72f * dentPulse0 * dentFalloff(a - dentAngle0, 0.30f)
+                rr -= dentDepth * 0.72f * dentPulse1 * dentFalloff(a - dentAngle1, 0.24f)
+                rr -= dentDepth * 0.55f * dentPulse2 * dentFalloff(a - dentAngle2, 0.38f)
+                // Gravity sag: the lower profile bulges slightly like a hanging drop
+                // (screen Y grows downward, so sin(a) > 0 is the bottom half).
+                if (bottom > 0f) rr *= 1.0f + 0.018f * bottom * bottom
+                r = rr
             }
             val x = cx + cos(a) * r
             val y = cy + sin(a) * r
@@ -265,7 +302,8 @@ internal class MaterialOrbMaterial : ShaderMaterial {
             view.orbMaterial < 0.5 -> 0.92f
             view.orbMaterial < 1.5 -> 0.45f
             view.orbMaterial < 3.5 -> 0.62f
-            else -> 0.90f
+            view.orbMaterial < 4.5 -> 0.90f
+            else -> 0.45f
         }
     }
 

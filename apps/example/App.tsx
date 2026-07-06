@@ -1,7 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import {
-  GestureResponderEvent,
   Image,
   Pressable,
   ScrollView,
@@ -10,13 +9,14 @@ import {
   View,
   SafeAreaView,
 } from 'react-native';
+import RNCSlider from '@react-native-community/slider';
 import {
   MaterialOrb,
   MATERIAL_ORB_PRESETS,
   type MaterialOrbMaterial,
 } from 'react-native-nitro-shaders';
 
-const MATERIALS: MaterialOrbMaterial[] = ['metal', 'water', 'iridescent', 'aura', 'mercury'];
+const MATERIALS: MaterialOrbMaterial[] = ['metal', 'water', 'iridescent', 'aura', 'mercury', 'glass'];
 
 // Runtime-switchable environments (must mirror native assets env/lab-N.png).
 const ENVS = [
@@ -27,6 +27,14 @@ const ENVS = [
   require('./assets/envs/lab-4.png'),
   require('./assets/envs/lab-5.png'),
   require('./assets/envs/lab-6.png'),
+  require('./assets/envs/lab-7.png'), // studio (metal/water default)
+  require('./assets/envs/lab-8.png'), // mercury default
+  require('./assets/envs/lab-9.png'), // glass default (wooden_studio_08)
+  require('./assets/envs/lab-10.png'), // hangar_interior (CC0 stand-in for BlendKit metal-hangar)
+  require('./assets/envs/lab-11.png'), // qwantani dawn pure sky (water/gel reference env)
+  require('./assets/envs/lab-12.png'), // sunset sea (clouds + ocean)
+  require('./assets/envs/lab-13.png'), // calm sea reflecting the sky
+  require('./assets/envs/lab-14.png'), // purple haze sky over sea
 ];
 
 function presetParams(material: MaterialOrbMaterial) {
@@ -37,6 +45,9 @@ function presetParams(material: MaterialOrbMaterial) {
     distortion: p.distortion,
     detail: p.detail,
     materialColor: p.materialColor,
+    density: 1.0,
+    smooth: 0.0,
+    envRot: 0,
   };
 }
 
@@ -48,6 +59,9 @@ const PARAMS: { key: ParamKey; label: string; min: number; max: number }[] = [
   { key: 'distortion', label: 'Distortion', min: 0, max: 1.4 },
   { key: 'detail', label: 'Detail', min: 0, max: 2 },
   { key: 'materialColor', label: 'Color', min: 0, max: 1 },
+  { key: 'density', label: 'Density', min: 0, max: 1.5 },
+  { key: 'smooth', label: 'Smooth', min: 0, max: 1 },
+  { key: 'envRot', label: 'Env Rot', min: 0, max: 6.283 },
 ];
 
 function Slider({
@@ -63,31 +77,19 @@ function Slider({
   max: number;
   onChange: (v: number) => void;
 }) {
-  const [trackWidth, setTrackWidth] = useState(0);
-
-  const handleTouch = (e: GestureResponderEvent) => {
-    if (trackWidth <= 0) return;
-    const pct = Math.min(1, Math.max(0, e.nativeEvent.locationX / trackWidth));
-    onChange(min + pct * (max - min));
-  };
-
-  const pct = (value - min) / (max - min);
-
   return (
     <View style={styles.sliderRow}>
       <Text style={styles.sliderLabel}>{label}</Text>
-      <View
-        style={styles.track}
-        onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
-        onStartShouldSetResponder={() => true}
-        onMoveShouldSetResponder={() => true}
-        onResponderGrant={handleTouch}
-        onResponderMove={handleTouch}
-      >
-        <View style={styles.trackBase} />
-        <View style={[styles.trackFill, { width: `${pct * 100}%` }]} />
-        <View style={[styles.thumb, { left: `${pct * 100}%` }]} />
-      </View>
+      <RNCSlider
+        style={styles.nativeSlider}
+        minimumValue={min}
+        maximumValue={max}
+        value={value}
+        onValueChange={onChange}
+        minimumTrackTintColor="#2f80ff"
+        maximumTrackTintColor="#d5d9e2"
+        thumbTintColor="#ffffff"
+      />
       <Text style={styles.sliderValue}>{value.toFixed(2)}</Text>
     </View>
   );
@@ -126,6 +128,9 @@ export default function App() {
             distortion={params.distortion}
             detail={params.detail}
             materialColor={params.materialColor}
+            density={params.density}
+            smooth={params.smooth}
+            envRot={params.envRot}
             environment={envIndex}
             hdr={hdr}
             style={styles.surface}
@@ -292,38 +297,9 @@ const styles = StyleSheet.create({
     color: '#15181f',
     fontSize: 13,
   },
-  track: {
+  nativeSlider: {
     flex: 1,
-    height: 28,
-    justifyContent: 'center',
-  },
-  trackBase: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#d5d9e2',
-  },
-  trackFill: {
-    position: 'absolute',
-    left: 0,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#2f80ff',
-  },
-  thumb: {
-    position: 'absolute',
-    marginLeft: -12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 3,
+    height: 36,
   },
   sliderValue: {
     width: 42,
