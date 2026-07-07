@@ -24,8 +24,12 @@ Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a f
   silhouette in-shader (stesse formule del Path), blending premultiplied, view
   trasparente. MSL 4/4 verificati con `xcrun metal`. Manca ombra di contatto (debito).
 - **Lab example**: slider semantici + selettore pattern.
-- Verifiche: typecheck OK, bun test 6/6, assembleDebug Android OK, pod install OK.
-- Commit: dea7fe3 (stato pre-refactor), 5338ea9 (fasi A+B+C), fase D a seguire.
+- Verifiche: typecheck OK, bun test 6/6, assembleDebug Android OK, pod install OK,
+  xcodebuild example SUCCEEDED.
+- **Giulio conferma: i material funzionano anche su iOS** (primo run riuscito).
+- Commit: dea7fe3 (stato pre-refactor), 5338ea9 (fasi A+B+C), 8ecc265 (fase D iOS).
+- Prossima sessione: ombra di contatto iOS, validazione parità Android post-refactor,
+  aggiornamento doc architettura allo spec semantico.
 
 ## [2026-07-06 sera] — Fase materiali — water VALIDATO da Giulio e congelato come default
 - **water validato su device** (screenshot Giulio): preset default congelato = speed 2.0,
