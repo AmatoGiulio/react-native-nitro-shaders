@@ -92,5 +92,7 @@ Decisione di Giulio: **4 material** — metal, water, iridescent, glass.
 
 ## Blocchi aperti
 - BLOCKED (Giulio): validazione visiva post-refactor su Android (parità con dea7fe3).
-- BLOCKED (Giulio/Mac): primo run iOS su device/simulatore.
+- ~~primo run iOS~~ → **FATTO (2026-07-06 notte): Giulio conferma che i material
+  funzionano anche su iOS.** Resta la validazione fine (parità look con Android)
+  e l'ombra di contatto mancante.
 - (Se ripreso in futuro) animazione symbiote: video del playback Blender.
