@@ -1,0 +1,314 @@
+// ==========================================
+// orb-core.msl — shared library of the material orb runtime (iOS Metal).
+// Mirrors android/src/main/assets/shaders/orb-core.agsl 1:1 — keep in sync.
+// The Swift loader concatenates: orb-core.msl + material-<name>.msl + orb-main.msl
+// and compiles them at runtime (one pipeline per material, cached).
+// Differences vs Android: uniforms arrive in ONE OrbUniforms buffer (u.*), the
+// env is a texture2d, and the silhouette is cut in-shader (no native Path yet).
+// ==========================================
+
+#include <metal_stdlib>
+using namespace metal;
+
+struct VertexOut {
+    float4 position [[position]];
+};
+
+// Fullscreen triangle — shared by every orb pipeline.
+vertex VertexOut orbVertex(uint vertexID [[vertex_id]]) {
+    float2 positions[3] = {
+        float2(-1.0f, -1.0f),
+        float2(3.0f, -1.0f),
+        float2(-1.0f, 3.0f)
+    };
+    VertexOut out;
+    out.position = float4(positions[vertexID], 0.0f, 1.0f);
+    return out;
+}
+
+struct OrbUniforms {
+    float4 lightDir;     // xyz = key light direction (y-up), w unused
+    float2 resolution;
+    float2 envSize;
+    float time;
+    float speed;              // resolved (motion overrides applied natively)
+    float morph;
+    float orbit;
+    float pattern;            // 0 folds, 1 bands, 2 ripples
+    float patternScale;
+    float patternDistortion;
+    float tint;
+    float opacity;
+    float envRot;
+    float hdrBoost;
+    float density;
+    float smoothness;
+    float silDensity;
+    float smoothSil;          // 1 = smooth wax silhouette family (water/glass)
+    float motionSeed;
+};
+
+static inline float sat(float v) { return clamp(v, 0.0f, 1.0f); }
+
+static inline float hash21(float2 p) {
+    p = fract(p * float2(123.34f, 456.21f));
+    p += dot(p, p + 45.32f);
+    return fract(p.x * p.y);
+}
+
+// --- 3D value noise ---
+static inline float hash13(float3 p) {
+    p = fract(p * 0.1031f);
+    p += dot(p, p.zyx + 31.32f);
+    return fract((p.x + p.y) * p.z);
+}
+
+static float noise3(float3 x) {
+    float3 i = floor(x);
+    float3 f = fract(x);
+    f = f * f * (3.0f - 2.0f * f);
+    float n000 = hash13(i + float3(0.0f, 0.0f, 0.0f));
+    float n100 = hash13(i + float3(1.0f, 0.0f, 0.0f));
+    float n010 = hash13(i + float3(0.0f, 1.0f, 0.0f));
+    float n110 = hash13(i + float3(1.0f, 1.0f, 0.0f));
+    float n001 = hash13(i + float3(0.0f, 0.0f, 1.0f));
+    float n101 = hash13(i + float3(1.0f, 0.0f, 1.0f));
+    float n011 = hash13(i + float3(0.0f, 1.0f, 1.0f));
+    float n111 = hash13(i + float3(1.0f, 1.0f, 1.0f));
+    float nx00 = mix(n000, n100, f.x);
+    float nx10 = mix(n010, n110, f.x);
+    float nx01 = mix(n001, n101, f.x);
+    float nx11 = mix(n011, n111, f.x);
+    return mix(mix(nx00, nx10, f.y), mix(nx01, nx11, f.y), f.z);
+}
+
+static float fbm3(float3 p) {
+    float v = 0.0f, a = 0.5f;
+    for (int i = 0; i < 3; i++) { v += a * noise3(p); p = p * 1.92f + 7.3f; a *= 0.5f; }
+    return v;
+}
+
+// Rotate a vector around Y (ay) then X (ax) — orbit on horizontal + vertical axes.
+static float3 rotate3(float3 v, float ax, float ay) {
+    float cy = cos(ay), sy = sin(ay);
+    v = float3(v.x * cy + v.z * sy, v.y, -v.x * sy + v.z * cy);
+    float cx = cos(ax), sx = sin(ax);
+    v = float3(v.x, v.y * cx - v.z * sx, v.y * sx + v.z * cx);
+    return v;
+}
+
+// --- Gradient (Perlin-style) noise, matches Blender's Noise Texture basis ---
+static float3 hash33(float3 p) {
+    p = float3(dot(p, float3(127.1f, 311.7f, 74.7f)),
+               dot(p, float3(269.5f, 183.3f, 246.1f)),
+               dot(p, float3(113.5f, 271.9f, 124.6f)));
+    return -1.0f + 2.0f * fract(sin(p) * 43758.5453123f);
+}
+
+static float gnoise(float3 p) {
+    float3 i = floor(p);
+    float3 f = fract(p);
+    float3 u = f * f * (3.0f - 2.0f * f);
+    float n = mix(
+        mix(mix(dot(hash33(i + float3(0,0,0)), f - float3(0,0,0)),
+                dot(hash33(i + float3(1,0,0)), f - float3(1,0,0)), u.x),
+            mix(dot(hash33(i + float3(0,1,0)), f - float3(0,1,0)),
+                dot(hash33(i + float3(1,1,0)), f - float3(1,1,0)), u.x), u.y),
+        mix(mix(dot(hash33(i + float3(0,0,1)), f - float3(0,0,1)),
+                dot(hash33(i + float3(1,0,1)), f - float3(1,0,1)), u.x),
+            mix(dot(hash33(i + float3(0,1,1)), f - float3(0,1,1)),
+                dot(hash33(i + float3(1,1,1)), f - float3(1,1,1)), u.x), u.y), u.z);
+    return 0.5f + 0.5f * n;   // → 0..1
+}
+
+// Blender fBM: octaves (Detail), gain = Roughness, lacunarity 2.
+static float gfbm(float3 p, float octaves, float roughness) {
+    float v = 0.0f, amp = 1.0f, maxv = 0.0f;
+    for (int i = 0; i < 5; i++) {
+        if (float(i) >= octaves) { break; }
+        v += amp * gnoise(p);
+        maxv += amp;
+        p *= 2.0f;
+        amp *= roughness;
+    }
+    return v / max(maxv, 0.0001f);
+}
+
+// ---- Environment sampling ----
+
+static float3 sampleEnv(constant OrbUniforms& u,
+                        texture2d<float> envTex,
+                        float3 dir) {
+    constexpr sampler envSampler(s_address::repeat, t_address::clamp_to_edge, filter::linear);
+    dir = normalize(dir);
+    float ca = cos(u.envRot), sa = sin(u.envRot);
+    dir = float3(dir.x * ca - dir.z * sa, dir.y, dir.x * sa + dir.z * ca);
+    float uu = atan2(dir.z, dir.x) * 0.1591549f + 0.5f;
+    float vv = acos(clamp(dir.y, -1.0f, 1.0f)) * 0.3183099f;
+    float3 c = envTex.sample(envSampler, float2(uu, vv)).rgb;
+    // Inverse tonemap (pseudo-HDR): re-expand clamped LDR lights (up to ~6x).
+    float lum = dot(c, float3(0.299f, 0.587f, 0.114f));
+    float boost = smoothstep(0.70f, 1.0f, lum);
+    c *= 1.0f + 5.0f * boost * boost * u.hdrBoost;
+    return c;
+}
+
+static float3 sampleEnvSoft(constant OrbUniforms& u,
+                            texture2d<float> envTex,
+                            float3 dir, float rough) {
+    float3 t = normalize(cross(float3(0.0f, 1.0f, 0.0f), dir) + float3(0.001f));
+    float3 bt = cross(dir, t);
+    float k = rough * 0.35f;
+    float3 c = sampleEnv(u, envTex, dir);
+    c += sampleEnv(u, envTex, dir + t * k);
+    c += sampleEnv(u, envTex, dir - t * k);
+    c += sampleEnv(u, envTex, dir + bt * k);
+    c += sampleEnv(u, envTex, dir - bt * k);
+    return c / 5.0f;
+}
+
+// ---- Pattern library (u.pattern switches at runtime, no rebuild) ----
+
+// 'folds' (0): large soft 3D folds that morph in place.
+static float foldsHeight(constant OrbUniforms& u, float3 sp, float t) {
+    float3 q = rotate3(sp, (t * 0.10f + u.motionSeed) * u.orbit, t * 0.14f * u.orbit);
+    float3 morph = float3(
+        sin(t * 0.21f),
+        sin(t * 0.17f + 2.1f),
+        sin(t * 0.13f + 4.2f)
+    ) * 0.55f;
+    float scale = mix(1.1f, 2.4f, sat(u.patternScale * 0.5f));
+    float3 qq = (q + morph) * scale;
+    float w = fbm3(qq * 0.6f);
+    return fbm3(qq + (w - 0.5f) * 1.1f);
+}
+
+// 'bands' (1): wave bands swirled by a distortion field (dispersion glass).
+static float bandsHeight(constant OrbUniforms& u, float3 sp, float t) {
+    float3 q = rotate3(sp, (t * 0.08f + u.motionSeed) * u.orbit, t * 0.11f * u.orbit);
+    float scale = mix(3.0f, 7.0f, sat(u.patternScale));
+    float distort = mix(4.0f, 20.0f, sat(u.patternDistortion));
+    float w = fbm3(q * 1.3f);
+    float bands = sin((q.x + q.y * 0.5f + q.z * 0.3f) * scale + w * distort);
+    return 0.5f + 0.5f * bands;
+}
+
+// 'ripples' (2): Blender Noise Texture fBM with Distortion (soft marble).
+static float ripplesHeight(constant OrbUniforms& u, float3 sp, float t) {
+    float3 q = rotate3(sp, (t * 0.10f + u.motionSeed) * u.orbit, t * 0.14f * u.orbit);
+    q += float3(sin(t * 0.21f), sin(t * 0.17f + 2.1f), sin(t * 0.13f + 4.2f)) * 0.30f;
+    float scale = 2.0f * mix(0.7f, 1.4f, sat(u.patternScale * 0.5f));
+    float3 p = q * scale;
+    float distort = 5.0f * mix(0.5f, 1.0f, sat(u.patternDistortion));
+    float3 dp = p + distort * float3(
+        gnoise(p + float3(13.5f, 7.2f, 2.1f)) * 2.0f - 1.0f,
+        gnoise(p + float3(1.3f, 17.2f, 9.4f)) * 2.0f - 1.0f,
+        gnoise(p + float3(5.7f, 3.1f, 19.7f)) * 2.0f - 1.0f
+    );
+    return gfbm(dp, 2.0f, 0.5f);
+}
+
+static float patternHeight(constant OrbUniforms& u, float3 sp, float t) {
+    if (u.pattern < 0.5f) { return foldsHeight(u, sp, t); }
+    if (u.pattern < 1.5f) { return bandsHeight(u, sp, t); }
+    return ripplesHeight(u, sp, t);
+}
+
+// Tangential gradient of the active pattern on the sphere.
+static float3 patternTangent(constant OrbUniforms& u, float3 sp, float3 baseN, float t) {
+    float e = 0.05f;
+    float h = patternHeight(u, sp, t);
+    float hx = patternHeight(u, sp + float3(e, 0.0f, 0.0f), t) - h;
+    float hy = patternHeight(u, sp + float3(0.0f, e, 0.0f), t) - h;
+    float hz = patternHeight(u, sp + float3(0.0f, 0.0f, e), t) - h;
+    float3 grad = float3(hx, hy, hz) / e;
+    return grad - dot(grad, baseN) * baseN;
+}
+
+// Shared perturbed normal: tangential folds + a radial "push from inside".
+static float3 perturbNormal3(constant OrbUniforms& u, float3 sp, float3 baseN, float t) {
+    float e = 0.055f;
+    float h = patternHeight(u, sp, t);
+    float hx = patternHeight(u, sp + float3(e, 0.0f, 0.0f), t) - h;
+    float hy = patternHeight(u, sp + float3(0.0f, e, 0.0f), t) - h;
+    float hz = patternHeight(u, sp + float3(0.0f, 0.0f, e), t) - h;
+    float3 grad = float3(hx, hy, hz) / e;
+    float3 tang = grad - dot(grad, baseN) * baseN;
+    float bump = mix(0.35f, 1.15f, sat(u.patternDistortion)) * (0.5f + u.morph * 0.5f);
+    float3 N = normalize(baseN - tang * bump);
+    N = normalize(N + baseN * (h - 0.5f) * (0.6f + u.morph) * 0.8f);
+    return N;
+}
+
+// ---- Silhouette (in-shader on iOS; Android draws it as a native Path).
+// Keep formulas in sync with ShaderMaterial.kt buildMaterialOrbPath. ----
+
+static float rimNotch(float d, float width) {
+    d = fmod(d + 3.14159265f, 6.2831853f);
+    if (d < 0.0f) { d += 6.2831853f; }
+    d -= 3.14159265f;
+    float x = d / width;
+    float g = max(1.0f - x * x, 0.0f);
+    return g * g;
+}
+
+static float rimDeviation(constant OrbUniforms& u, float a, float phase) {
+    float b0 = 0.45f + 0.55f * sin(phase * 0.26f + 1.1f);
+    float b1 = 0.45f + 0.55f * sin(phase * 0.33f + 4.0f);
+    float b2 = 0.45f + 0.55f * sin(phase * 0.21f + 2.3f);
+    float w = sin(a * 5.0f + phase * 0.20f) * 0.42f * b0
+            + sin(a * 8.0f - phase * 0.16f + 1.2f) * 0.34f * b1
+            + sin(a * (11.0f + u.silDensity) + phase * 0.12f + 2.1f) * 0.24f * b2;
+    if (w > 0.0f) { w *= 0.30f; }
+    float lobeAmp = (0.048f + 0.062f * u.morph + 0.026f * u.patternDistortion) * (1.10f - u.silDensity * 0.35f) * 0.62f;
+    float dentDepth = (0.046f + 0.068f * u.morph) * (1.05f - u.silDensity * 0.30f);
+    float dev = lobeAmp * w;
+    float p0 = max(0.5f + 0.5f * sin(phase * 0.34f + 0.6f), 0.12f);
+    float p1 = max(0.5f + 0.5f * sin(phase * 0.27f + 3.1f), 0.12f);
+    float p2 = max(0.5f + 0.5f * sin(phase * 0.41f + 5.0f), 0.12f);
+    dev -= dentDepth * 0.72f * p0 * rimNotch(a - phase * 0.23f, 0.30f);
+    dev -= dentDepth * 0.72f * p1 * rimNotch(a + phase * 0.17f - 2.4f, 0.24f);
+    dev -= dentDepth * 0.55f * p2 * rimNotch(a - phase * 0.11f - 4.6f, 0.38f);
+    return dev;
+}
+
+// Rim-fold height field for the pebble family (drives the crease coupling).
+static float rimFoldHeight(constant OrbUniforms& u, float2 q, float phase) {
+    float aa = -atan2(q.y, q.x);
+    return rimDeviation(u, aa, phase) * smoothstep(0.45f, 1.05f, length(q));
+}
+
+// Target silhouette radius in sphere-domain units (|p| where the border sits).
+// Mirrors buildMaterialOrbPath: the same harmonics/dents, divided by breath.
+static float silhouetteRadius(constant OrbUniforms& u, float2 p, float phase, float breath) {
+    float a = -atan2(p.y, p.x);          // native angles are y-down
+    float bottom = sin(a);
+    float b0 = 0.45f + 0.55f * sin(phase * 0.26f + 1.1f);
+    float b1 = 0.45f + 0.55f * sin(phase * 0.33f + 4.0f);
+    float b2 = 0.45f + 0.55f * sin(phase * 0.21f + 2.3f);
+    float lobeAmp = (0.048f + 0.062f * u.morph + 0.026f * u.patternDistortion) * (1.10f - u.silDensity * 0.35f);
+    float dentDepth = (0.046f + 0.068f * u.morph) * (1.05f - u.silDensity * 0.30f);
+    float r;
+    if (u.smoothSil > 0.5f) {
+        float sw = sin(a * 3.0f + phase * 0.16f) * 0.50f * b0
+                 + sin(a * 5.0f - phase * 0.11f + 1.0f) * 0.30f * b1
+                 + sin(a * 2.0f + phase * 0.08f + 2.4f) * 0.20f * b2;
+        if (sw > 0.0f) { sw *= 0.5f; }
+        r = 1.0f + (lobeAmp * 0.50f * sw) / breath;
+        if (bottom > 0.0f) { r *= 1.0f + 0.020f * bottom * bottom; }
+    } else {
+        float wave = sin(a * 5.0f + phase * 0.20f) * 0.42f * b0
+                   + sin(a * 8.0f - phase * 0.16f + 1.2f) * 0.34f * b1
+                   + sin(a * (11.0f + u.silDensity) + phase * 0.12f + 2.1f) * 0.24f * b2;
+        if (wave > 0.0f) { wave *= 0.30f; }
+        r = 1.0f + (lobeAmp * 0.62f * wave) / breath;
+        float p0 = max(0.5f + 0.5f * sin(phase * 0.34f + 0.6f), 0.12f);
+        float p1 = max(0.5f + 0.5f * sin(phase * 0.27f + 3.1f), 0.12f);
+        float p2 = max(0.5f + 0.5f * sin(phase * 0.41f + 5.0f), 0.12f);
+        r -= (dentDepth * 0.72f * p0 * rimNotch(a - phase * 0.23f, 0.30f)) / breath;
+        r -= (dentDepth * 0.72f * p1 * rimNotch(a + phase * 0.17f - 2.4f, 0.24f)) / breath;
+        r -= (dentDepth * 0.55f * p2 * rimNotch(a - phase * 0.11f - 4.6f, 0.38f)) / breath;
+        if (bottom > 0.0f) { r *= 1.0f + 0.018f * bottom * bottom; }
+    }
+    return r;
+}

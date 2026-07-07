@@ -1,0 +1,34 @@
+// ===== GLASS — dispersion glass (per-channel chromatic refraction) =====
+// Mirrors android material-glass.agsl 1:1 — keep in sync.
+static float3 surfaceColor(constant OrbUniforms& u,
+                           texture2d<float> envTex,
+                           float2 p, float dd, float3 sp, float3 baseN, float3 N, float t) {
+    float3 V = float3(0.0f, 0.0f, 1.0f);
+
+    float3 gTang = patternTangent(u, sp, baseN, t);
+    float3 Ng = normalize(baseN - gTang * (0.5f + u.morph * 0.8f));
+    float ndvG = sat(dot(Ng, V));
+    float3 Rg = reflect(-V, Ng);
+
+    float iorBase = 1.45f;
+    float disp = 0.05f * (0.4f + u.patternDistortion);
+    float f0 = 0.04f;
+    float fres = f0 + (1.0f - f0) * pow(1.0f - ndvG, 5.0f);
+    float rough = 0.30f + 0.45f * sat(u.tint);
+    float3 Tr = refract(-V, Ng, 1.0f / (iorBase - disp));
+    float3 Tg = refract(-V, Ng, 1.0f / iorBase);
+    float3 Tb = refract(-V, Ng, 1.0f / (iorBase + disp));
+    float3 through = float3(
+        sampleEnvSoft(u, envTex, Tr, rough).r,
+        sampleEnvSoft(u, envTex, Tg, rough).g,
+        sampleEnvSoft(u, envTex, Tb, rough).b
+    );
+    float3 refl = sampleEnvSoft(u, envTex, Rg, 0.15f + 0.30f * sat(u.tint));
+    float3 color = mix(through, refl, sat(fres * 0.5f));
+    color = mix(color, through, 0.25f);
+    color = color * 0.85f + 0.06f;
+    float lum = max(refl.r, max(refl.g, refl.b));
+    color += refl * smoothstep(0.82f, 1.0f, lum) * 0.18f;
+    color += float3(0.90f, 0.94f, 1.0f) * pow(1.0f - ndvG, 3.5f) * 0.18f;
+    return color;
+}

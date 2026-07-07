@@ -1,0 +1,39 @@
+// ===== WATER / GEL — clear glass/gel, transmission + reflection =====
+// Mirrors android material-water.agsl 1:1 — keep in sync.
+static float3 surfaceColor(constant OrbUniforms& u,
+                           texture2d<float> envTex,
+                           float2 p, float dd, float3 sp, float3 baseN, float3 N, float t) {
+    float3 V = float3(0.0f, 0.0f, 1.0f);
+
+    float3 wTang = patternTangent(u, sp, baseN, t);
+    float wh = patternHeight(u, sp, t);
+    float3 mp = rotate3(sp, (t * 0.05f + u.motionSeed) * u.orbit, t * 0.07f * u.orbit);
+    float rippleMask = mix(1.0f, smoothstep(0.30f, 0.66f, gnoise(mp * 1.2f + 4.0f)), u.smoothness);
+    float vGrad = smoothstep(-0.75f, 0.15f, baseN.y);
+    float3 Nw = normalize(baseN - wTang * (0.14f + u.morph * 0.45f) * rippleMask * vGrad);
+    float ndvW = sat(dot(Nw, V));
+    float3 Rw = reflect(-V, Nw);
+
+    float3 gelA = float3(0.408f, 0.953f, 1.0f);   // #68F3FF
+    float3 gelB = float3(0.447f, 0.467f, 1.0f);   // #7277FF
+    float3 baseCol = mix(gelA, gelB, sat(wh));
+
+    float3 T = refract(-V, Nw, 1.0f / 1.473f);
+    float3 through = sampleEnvSoft(u, envTex, T, mix(0.02f, 0.22f, sat(u.tint)));
+    float pathLen = mix(0.10f, 1.0f, dd);
+    float3 absorb = (float3(1.0f) - baseCol) * (0.4f * u.density);
+    float3 principled = through * exp(-absorb * pathLen * 2.0f);
+    principled *= mix(float3(1.0f), baseCol, 0.30f);
+
+    float3 glass = sampleEnvSoft(u, envTex, Rw, 0.08f);
+
+    float fres = pow(1.0f - ndvW, 5.0f);
+    float fresMix = smoothstep(0.0f, 0.14f, fres + 0.02f);
+    float3 color = mix(principled, glass, fresMix);
+
+    float lum = max(glass.r, max(glass.g, glass.b));
+    color += glass * smoothstep(0.78f, 1.0f, lum) * 0.35f;
+    float topLight = smoothstep(-0.7f, 0.9f, dot(baseN, u.lightDir.xyz));
+    color *= mix(0.86f, 1.12f, topLight);
+    return color;
+}

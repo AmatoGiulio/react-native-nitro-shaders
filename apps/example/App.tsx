@@ -119,7 +119,7 @@ export default function App() {
     <SafeAreaView style={styles.safearea}>
       <View style={styles.container}>
         <View style={styles.tabs}>
-          {MATERIAL_NAMES.map((m) => (
+          {MATERIAL_NAMES.map((m: MaterialName) => (
             <Pressable key={m} onPress={() => switchMaterial(m)}>
               <View style={[styles.tab, material === m && styles.tabSelected]}>
                 <Text style={[styles.tabText, material === m && styles.tabTextSelected]}>
@@ -133,7 +133,7 @@ export default function App() {
           <MaterialOrb material={material} params={params} style={styles.surface} />
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.envRow}>
-          <Pressable onPress={() => setParams((prev) => ({ ...prev, environment: -1 }))}>
+          <Pressable onPress={() => setParams((prev: LabParams) => ({ ...prev, environment: -1 }))}>
             <View
               style={[
                 styles.envThumb,
@@ -145,7 +145,7 @@ export default function App() {
             </View>
           </Pressable>
           {ENVS.map((src, i) => (
-            <Pressable key={i} onPress={() => setParams((prev) => ({ ...prev, environment: i }))}>
+            <Pressable key={i} onPress={() => setParams((prev: LabParams) => ({ ...prev, environment: i }))}>
               <Image
                 source={src}
                 style={[styles.envThumb, params.environment === i && styles.envSelected]}
@@ -157,7 +157,7 @@ export default function App() {
           <View style={styles.patternRow}>
             <Text style={styles.sliderLabel}>Pattern</Text>
             {PATTERNS.map((pt) => (
-              <Pressable key={pt} onPress={() => setParams((prev) => ({ ...prev, pattern: pt }))}>
+              <Pressable key={pt} onPress={() => setParams((prev: LabParams) => ({ ...prev, pattern: pt }))}>
                 <View style={[styles.patternChip, params.pattern === pt && styles.patternChipOn]}>
                   <Text
                     style={[
@@ -178,13 +178,13 @@ export default function App() {
               min={s.min}
               max={s.max}
               value={params[s.key]}
-              onChange={(v) => setParams((prev) => ({ ...prev, [s.key]: v }))}
+              onChange={(v) => setParams((prev: LabParams) => ({ ...prev, [s.key]: v }))}
             />
           ))}
           <View style={styles.panelFooter}>
             <Pressable
               style={styles.hdrRow}
-              onPress={() => setParams((prev) => ({ ...prev, hdr: !prev.hdr }))}
+              onPress={() => setParams((prev: LabParams) => ({ ...prev, hdr: !prev.hdr }))}
             >
               <View style={[styles.checkbox, params.hdr && styles.checkboxOn]}>
                 {params.hdr && <Text style={styles.checkmark}>✓</Text>}

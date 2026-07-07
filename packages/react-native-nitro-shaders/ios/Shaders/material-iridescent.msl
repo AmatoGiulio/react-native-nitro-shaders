@@ -1,0 +1,20 @@
+// ===== IRIDESCENT — thin-film over a clear dielectric (soap bubble) =====
+// Mirrors android material-iridescent.agsl 1:1 — keep in sync.
+static float3 surfaceColor(constant OrbUniforms& u,
+                           texture2d<float> envTex,
+                           float2 p, float dd, float3 sp, float3 baseN, float3 N, float t) {
+    float3 V = float3(0.0f, 0.0f, 1.0f);
+    float ndv = sat(dot(N, V));
+    float3 R = reflect(-V, N);
+
+    float fres = pow(1.0f - ndv, 2.0f);
+    float3 refl = sampleEnv(u, envTex, R);
+    float3 T = refract(-V, N, 1.0f / 1.12f);
+    float3 through = sampleEnvSoft(u, envTex, T, 0.35f);
+    float band = fres * 1.7f + patternHeight(u, sp, t) * 1.1f + 0.15f;
+    float3 film = 0.5f + 0.5f * cos(6.2831f * (band + float3(0.0f, 0.33f, 0.67f)));
+    float3 pearl = mix(through, float3(0.93f, 0.92f, 0.95f), 0.45f);
+    float3 color = mix(pearl * mix(float3(1.0f), film, 0.4f), refl * film, sat(fres * 1.1f + 0.14f));
+    color += refl * pow(1.0f - ndv, 4.0f) * 0.25f;
+    return color;
+}

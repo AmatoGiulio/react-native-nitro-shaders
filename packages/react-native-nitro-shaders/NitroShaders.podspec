@@ -22,6 +22,15 @@ Pod::Spec.new do |s|
     "cpp/**/*.{hpp,cpp}",
   ]
 
+  # Orb runtime resources: MSL shader sources (compiled at runtime, mirroring the
+  # Android AGSL assets) + equirectangular environment textures.
+  s.resource_bundles = {
+    "NitroShaders" => [
+      "ios/Shaders/*.msl",
+      "ios/Assets/env/*.png",
+    ]
+  }
+
   load 'nitrogen/generated/ios/NitroShaders+autolinking.rb'
   add_nitrogen_files(s)
 

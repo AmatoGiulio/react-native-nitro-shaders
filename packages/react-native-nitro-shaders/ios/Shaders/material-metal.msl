@@ -1,0 +1,17 @@
+// ===== METAL — metallic Principled BSDF, mirror IBL =====
+// Mirrors android material-metal.agsl 1:1 — keep in sync.
+static float3 surfaceColor(constant OrbUniforms& u,
+                           texture2d<float> envTex,
+                           float2 p, float dd, float3 sp, float3 baseN, float3 N, float t) {
+    float3 V = float3(0.0f, 0.0f, 1.0f);
+    float ndv = sat(dot(N, V));
+    float3 R = reflect(-V, N);
+
+    float3 baseTint = mix(float3(0.95f, 0.96f, 0.98f), float3(1.02f, 0.98f, 0.92f), sat(u.tint));
+    float3 spec = sampleEnvSoft(u, envTex, R, 0.10f + 0.15f * u.patternDistortion);
+    float3 F = mix(baseTint * 0.85f, float3(1.0f), pow(1.0f - ndv, 5.0f));
+    float3 color = spec * F;
+    float3 irid = 0.5f + 0.5f * cos(6.2831f * (pow(1.0f - ndv, 3.0f) * 1.4f + float3(0.0f, 0.33f, 0.67f)));
+    color = mix(color, color * irid, smoothstep(0.6f, 0.98f, 1.0f - ndv) * 0.35f);
+    return color;
+}

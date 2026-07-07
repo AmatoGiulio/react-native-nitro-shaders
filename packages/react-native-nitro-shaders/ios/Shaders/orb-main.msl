@@ -1,0 +1,56 @@
+// ==========================================
+// orb-main.msl — fragment entry point, appended after orb-core + material-<name>.
+// Mirrors android orb-main.agsl, plus the in-shader silhouette cut (Android draws
+// the silhouette as a native Path; iOS clips with alpha here). Contact shadow is
+// NOT rendered yet on iOS (declared debt — first porting pass).
+// ==========================================
+
+fragment float4 orbFragment(VertexOut in [[stage_in]],
+                            constant OrbUniforms& u [[buffer(0)]],
+                            texture2d<float> envTex [[texture(0)]]) {
+    float2 res = max(u.resolution, float2(1.0f));
+    float size = min(res.x, res.y);
+    float2 fragCoord = in.position.xy;
+    float2 uv = (fragCoord - 0.5f * res) / (0.5f * size);
+    uv.y = -uv.y; // Y-up
+
+    float t = u.time * u.speed;
+
+    // Heartbeat breath: identical formula to the Android Path + AGSL main.
+    float pb = t * 0.55f + 0.4f;
+    float breath = 0.945f + 0.055f * (0.65f * sin(pb) + 0.35f * sin(2.0f * pb + 1.2f));
+    float2 p = uv / (0.81f * breath);
+    float dd = dot(p, p);
+
+    // Silhouette cut (native Path on Android): distance vs the deformed radius.
+    float phase = t;
+    float rTarget = silhouetteRadius(u, p, phase, breath);
+    float aaWidth = 1.5f / (0.405f * size * breath);   // ~1.5px anti-alias band
+    float silAlpha = 1.0f - smoothstep(rTarget - aaWidth, rTarget + aaWidth, length(p));
+    if (silAlpha <= 0.0f) {
+        return float4(0.0f);
+    }
+
+    float z = sqrt(max(0.0f, 1.0f - dd));
+    float3 sp = float3(p.x, p.y, z);
+    float3 baseN = normalize(sp);
+    float3 N = perturbNormal3(u, sp, baseN, t);
+
+    // Rim-fold coupling: only for the pebble silhouette family (lobes + dents).
+    if (u.smoothSil < 0.5f) {
+        float e2 = 0.02f;
+        float hC = rimFoldHeight(u, p, t);
+        float hX = rimFoldHeight(u, p + float2(e2, 0.0f), t) - hC;
+        float hY = rimFoldHeight(u, p + float2(0.0f, e2), t) - hC;
+        float3 rimGrad = float3(hX, hY, 0.0f) / e2;
+        float3 rimTang = rimGrad - dot(rimGrad, baseN) * baseN;
+        N = normalize(N - rimTang * 3.2f);
+    }
+
+    float3 color = surfaceColor(u, envTex, p, dd, sp, baseN, N, t);
+
+    color = color / (color + 0.55f) * 1.55f;   // shared soft tonemap
+    color += (hash21(fragCoord + u.time) - 0.5f) / 255.0f;
+    float a = clamp(u.opacity, 0.0f, 1.0f) * silAlpha;
+    return float4(clamp(color, 0.0f, 1.0f) * a, a);   // premultiplied
+}

@@ -2,6 +2,31 @@
 
 Storico append-only delle sessioni. Ogni voce la scrive solo l'orchestratore a fine sessione.
 
+## [2026-07-06 notte] — GRANDE REFACTOR — 4 material, spec semantico, shader split, iOS
+- **DECISIONE (Giulio)**: si tengono 4 material (metal, water, iridescent, glass);
+  **aura e mercury rimossi ovunque** (ultima versione completa in git: dea7fe3).
+- **Spec Nitro riscritto** (semantico): material / speed / morph / orbit / pattern /
+  patternScale / patternDistortion / tint / opacity / lightAzimuth+Elevation /
+  environment (-1=default) / envRotation / hdr (bool) / density / smoothness.
+  Morti tutti gli slot legacy (repetition/grain/intensity/softness/angle/orbMaterial/
+  wobble/detail/materialColor/shiftRed/…). Codegen nitrogen rigenerato.
+  ⚠️ NON usare post-script.js dopo nitrogen (rompe gli import: la classe Kotlin
+  sta in com.margelo.nitro.nitroshaders).
+- **Registry parametri TS**: nuovo `src/materials/params.ts` (OrbParams semantici,
+  MATERIAL_PRESETS congelati, resolveOrbParams = unico mapping). `MaterialOrb` ora
+  è `material + params + motion`. Rimosso `material-orb.ts`.
+- **Shader split Android**: `orb-core.agsl` (lib + pattern library folds/bands/
+  ripples switchabili a runtime via uniform) + `material-*.agsl` (surfaceColor) +
+  `orb-main.agsl`. Kotlin concatena e cache-a per material; silhouette/env/density
+  per NOME material; opacity anche sull'ombra.
+- **iOS Metal (primo porting completo)**: `ios/Shaders/*.msl` speculari all'AGSL,
+  compilati a runtime (pipeline per material, cache), env PNG nel resource bundle,
+  silhouette in-shader (stesse formule del Path), blending premultiplied, view
+  trasparente. MSL 4/4 verificati con `xcrun metal`. Manca ombra di contatto (debito).
+- **Lab example**: slider semantici + selettore pattern.
+- Verifiche: typecheck OK, bun test 6/6, assembleDebug Android OK, pod install OK.
+- Commit: dea7fe3 (stato pre-refactor), 5338ea9 (fasi A+B+C), fase D a seguire.
+
 ## [2026-07-06 sera] — Fase materiali — water VALIDATO da Giulio e congelato come default
 - **water validato su device** (screenshot Giulio): preset default congelato = speed 2.0,
   wobble 0.38, distortion 0.0, detail 0.19, color 0.2, density 1.11, smooth 0.6, HDR off.
