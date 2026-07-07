@@ -1,0 +1,18 @@
+// ===== METAL — metallic Principled BSDF, mirror IBL =====
+// Validated chrome look (d160578): with hdr=false it is bit-identical.
+// tint = warmth of the metal (0 cool steel → 1 warm gold-ish).
+float3 surfaceColor(float2 p, float dd, float3 sp, float3 baseN, float3 N, float t) {
+    float3 V = float3(0.0, 0.0, 1.0);
+    float ndv = sat(dot(N, V));
+    float3 R = reflect(-V, N);
+
+    float3 baseTint = mix(float3(0.95, 0.96, 0.98), float3(1.02, 0.98, 0.92), sat(u_tint));
+    float3 spec = sampleEnvSoft(R, 0.10 + 0.15 * u_patternDistortion);
+    // Shadow lift via screen blend: raises the black "lakes" toward graphite
+    // while PRESERVING the gradients inside them.
+    float3 F = mix(baseTint * 0.85, float3(1.0), pow(1.0 - ndv, 5.0));
+    float3 color = spec * F;
+    float3 irid = 0.5 + 0.5 * cos(6.2831 * (pow(1.0 - ndv, 3.0) * 1.4 + float3(0.0, 0.33, 0.67)));
+    color = mix(color, color * irid, smoothstep(0.6, 0.98, 1.0 - ndv) * 0.35);
+    return color;
+}

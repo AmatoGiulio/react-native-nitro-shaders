@@ -31,8 +31,13 @@ internal interface ShaderMaterial {
 }
 
 /**
- * "materialOrb" — organic Path + soft contact shadow + AGSL material shaded with a
- * studio HDRI environment BitmapShader.
+ * "materialOrb" — organic Path + soft contact shadow + AGSL material shaded with
+ * an equirectangular environment BitmapShader.
+ *
+ * The AGSL program is assembled per material: orb-core.agsl (shared library) +
+ * material-<name>.agsl (surfaceColor) + orb-main.agsl (entry point), then cached.
+ * All semantic params arrive as uniforms already resolved (motion overrides applied
+ * here on the Kotlin side), so patterns/materials stay swappable at runtime.
  */
 internal class MaterialOrbMaterial : ShaderMaterial {
     override val name: String = "materialOrb"
@@ -56,31 +61,58 @@ internal class MaterialOrbMaterial : ShaderMaterial {
 
     private companion object {
         const val SHADOW_SRC_SIZE = 96
-    }
-    private val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var materialOrbShaderInit = false
-    private var materialOrbRuntimeShader: RuntimeShader? = null
 
-    // Studio environments (equirectangular) reflected/refracted by the materials.
-    // metal/water/iridescent/aura share the dark studio; mercury reflects a bright
-    // room so it reads real on the light app background.
-    private var envInit = false
-    private var envBitmap: Bitmap? = null
-    private var envShader: BitmapShader? = null
-    private var mercuryEnvBitmap: Bitmap? = null
-    private var mercuryEnvShader: BitmapShader? = null
-    // glass refracts a dark teal env (lab-2) — frozen from Giulio's on-device
-    // validation 2026-07-06. BlendKit preview asset, DEV-ONLY license (replace
-    // before publishing — see ASSET-LICENSES.md).
-    private var glassEnvBitmap: Bitmap? = null
-    private var glassEnvShader: BitmapShader? = null
-    // water/gel refracts a sunset-sea env (lab-12, clouds + ocean) — frozen from
-    // Giulio's on-device validation 2026-07-06. BlendKit asset, free license
-    // (see ASSET-LICENSES.md).
-    private var waterEnvBitmap: Bitmap? = null
-    private var waterEnvShader: BitmapShader? = null
-    // Runtime-switchable lab environments (env/lab-N.png), loaded lazily.
-    private val labEnvs = HashMap<Int, Pair<Bitmap, BitmapShader>>()
+        val MATERIAL_NAMES = setOf("metal", "water", "iridescent", "glass")
+
+        // Silhouette family: smooth wax blob (water/glass) vs liquid pebble
+        // (metal/iridescent, lobes + traveling dents).
+        fun isSmoothSilhouette(material: String) = material == "water" || material == "glass"
+
+        // Perceived silhouette density per material (higher = stiffer profile).
+        fun silhouetteDensity(material: String): Float = when (material) {
+            "metal" -> 0.92f
+            "water" -> 0.45f
+            "glass" -> 0.45f
+            else -> 0.62f // iridescent
+        }
+
+        // Contact shadow strength per material.
+        fun shadowStrength(material: String): Int = when (material) {
+            "metal" -> 30
+            "water" -> 20
+            "glass" -> 28
+            else -> 24 // iridescent
+        }
+
+        // Default env asset per material (validated defaults).
+        fun defaultEnvAsset(material: String): String = when (material) {
+            "water" -> "env/water-env.png"   // sunset sea (frozen 2026-07-06)
+            "glass" -> "env/glass-env.png"   // dark teal lab-2 (frozen 2026-07-06)
+            else -> "env/studio.png"          // metal/iridescent: dark studio
+        }
+
+        // Default pattern per material ('auto' resolution). Mirrors MATERIAL_PRESETS.
+        fun defaultPatternIndex(material: String): Float = when (material) {
+            "water" -> 2f      // ripples
+            "glass" -> 1f      // bands
+            else -> 0f          // folds (metal/iridescent)
+        }
+
+        fun patternIndex(pattern: String, material: String): Float = when (pattern) {
+            "folds" -> 0f
+            "bands" -> 1f
+            "ripples" -> 2f
+            else -> defaultPatternIndex(material)
+        }
+    }
+
+    private val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    // One assembled+compiled RuntimeShader per material, built lazily.
+    private val shaderCache = HashMap<String, RuntimeShader>()
+
+    // Environment bitmaps: per-material defaults + runtime lab overrides, lazy.
+    private val envCache = HashMap<String, Pair<Bitmap, BitmapShader>>()
 
     private fun loadEnvBitmap(view: ShaderSurfaceView, asset: String): Bitmap {
         val bmp = try {
@@ -93,54 +125,44 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         }
     }
 
-    private fun ensureMaterialOrbEnv(view: ShaderSurfaceView) {
-        if (envInit) {
-            return
-        }
-        envInit = true
-        val env = loadEnvBitmap(view, "env/studio.png")
-        envBitmap = env
-        envShader = BitmapShader(env, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
-        val mercuryEnv = loadEnvBitmap(view, "env/mercury-env.png")
-        mercuryEnvBitmap = mercuryEnv
-        mercuryEnvShader = BitmapShader(mercuryEnv, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
-        val glassEnv = loadEnvBitmap(view, "env/glass-env.png")
-        glassEnvBitmap = glassEnv
-        glassEnvShader = BitmapShader(glassEnv, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
-        val waterEnv = loadEnvBitmap(view, "env/water-env.png")
-        waterEnvBitmap = waterEnv
-        waterEnvShader = BitmapShader(waterEnv, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
-    }
-
-    private fun labEnv(view: ShaderSurfaceView, index: Int): Pair<Bitmap, BitmapShader>? {
-        labEnvs[index]?.let { return it }
-        val bmp = try {
-            view.appContext.assets.open("env/lab-$index.png").use { BitmapFactory.decodeStream(it) }
-        } catch (e: Exception) {
-            null
-        } ?: return null
+    private fun envFor(view: ShaderSurfaceView, material: String): Pair<Bitmap, BitmapShader> {
+        val labIndex = view.environment.toInt()
+        val asset = if (labIndex >= 0) "env/lab-$labIndex.png" else defaultEnvAsset(material)
+        envCache[asset]?.let { return it }
+        val bmp = loadEnvBitmap(view, asset)
         val pair = bmp to BitmapShader(bmp, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP)
-        labEnvs[index] = pair
+        envCache[asset] = pair
         return pair
     }
 
-    private fun materialOrbShader(view: ShaderSurfaceView): RuntimeShader? {
+    private fun resolvedMaterial(view: ShaderSurfaceView): String {
+        return if (MATERIAL_NAMES.contains(view.material)) view.material else "metal"
+    }
+
+    private fun materialShader(view: ShaderSurfaceView, material: String): RuntimeShader? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             return null
         }
-        if (!materialOrbShaderInit) {
-            materialOrbShaderInit = true
-            val source = view.appContext.assets.open("shaders/material-orb.agsl")
-                .bufferedReader().use { it.readText() }
-            materialOrbRuntimeShader = RuntimeShader(source).also { materialOrbPaint.shader = it }
+        shaderCache[material]?.let { return it }
+        return try {
+            val assets = view.appContext.assets
+            fun read(name: String): String =
+                assets.open("shaders/$name").bufferedReader().use { it.readText() }
+            val source = read("orb-core.agsl") + "\n" +
+                read("material-$material.agsl") + "\n" +
+                read("orb-main.agsl")
+            RuntimeShader(source).also { shaderCache[material] = it }
+        } catch (e: Exception) {
+            null
         }
-        return materialOrbRuntimeShader
     }
 
     override fun draw(canvas: Canvas, view: ShaderSurfaceView, w: Float, h: Float) {
-        val materialOrb = materialOrbShader(view) ?: return drawFallback(canvas, view, w, h)
-        setMaterialOrbUniforms(view, materialOrb, w, h)
-        drawMaterialOrb(view, canvas, w, h)
+        val material = resolvedMaterial(view)
+        val shader = materialShader(view, material) ?: return drawFallback(canvas, view, w, h)
+        setMaterialOrbUniforms(view, shader, material, w, h)
+        materialOrbPaint.shader = shader
+        drawMaterialOrb(view, canvas, material, w, h)
     }
 
     override fun drawFallback(canvas: Canvas, view: ShaderSurfaceView, w: Float, h: Float) {
@@ -148,67 +170,69 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         canvas.drawRect(0f, 0f, w, h, fallbackPaint)
     }
 
-    private fun setMaterialOrbUniforms(view: ShaderSurfaceView, materialOrb: RuntimeShader, w: Float, h: Float) {
-        ensureMaterialOrbEnv(view)
-        // Runtime env switch (tuning lab): `repetition` >= 100 selects env/lab-N.png
-        // (N = repetition - 100). Otherwise each material keeps its default env.
-        val labIndex = view.repetition.toInt() - 100
-        val lab = if (labIndex >= 0) labEnv(view, labIndex) else null
-        val isWater = view.orbMaterial >= 0.5 && view.orbMaterial < 1.5
-        val isMercury = view.orbMaterial >= 3.5 && view.orbMaterial < 4.5
-        val isGlass = view.orbMaterial >= 4.5
-        val defaultShader = if (isMercury) mercuryEnvShader else if (isGlass) glassEnvShader else if (isWater) waterEnvShader else envShader
-        val defaultBitmap = if (isMercury) mercuryEnvBitmap else if (isGlass) glassEnvBitmap else if (isWater) waterEnvBitmap else envBitmap
-        val boundShader = lab?.second ?: defaultShader
-        val boundBitmap = lab?.first ?: defaultBitmap
-        boundShader?.let { materialOrb.setInputShader("u_env", it) }
-        boundBitmap?.let { materialOrb.setFloatUniform("u_envSize", it.width.toFloat(), it.height.toFloat()) }
-        materialOrb.setFloatUniform("u_time", view.currentTimeSeconds())
-        materialOrb.setFloatUniform("u_speed", view.speed.toFloat())
-        materialOrb.setFloatUniform("u_resolution", w, h)
-        materialOrb.setFloatUniform("u_orbMaterial", view.orbMaterial.toFloat())
-        materialOrb.setFloatUniform("u_wobble", view.wobble.toFloat())
-        materialOrb.setFloatUniform("u_distortion", view.distortion.toFloat())
-        materialOrb.setFloatUniform("u_detail", view.detail.toFloat())
-        materialOrb.setFloatUniform("u_materialColor", view.materialColor.toFloat())
-        materialOrb.setFloatUniform("u_motionType", view.resolvedMotionType())
-        materialOrb.setFloatUniform("u_motionSpeed", view.resolvedMotionSpeed())
-        materialOrb.setFloatUniform("u_motionAmp", view.resolvedMotionAmp())
-        materialOrb.setFloatUniform("u_motionWarp", view.resolvedMotionWarp())
-        materialOrb.setFloatUniform("u_motionDetail", view.resolvedMotionDetail())
-        materialOrb.setFloatUniform("u_motionSeed", view.motionSeed.toFloat())
-        materialOrb.setFloatUniform("u_motionPeriod", view.motionPeriod.toFloat())
-        // Pseudo-HDR toggle rides the legacy `grain` slot (0 = off, 1 = on).
-        materialOrb.setFloatUniform("u_hdrBoost", view.grain.toFloat())
-        // water live-tuning: intensity → body density, softness → smooth-patch amount
-        // (legacy liquidMetal slots reused; declared debt).
-        materialOrb.setFloatUniform("u_intensity", view.intensity.toFloat())
-        materialOrb.setFloatUniform("u_softness", view.softness.toFloat())
-        // env horizontal rotation (move the HDRI) rides the legacy `angle` slot.
-        materialOrb.setFloatUniform("u_envRot", view.angle.toFloat())
+    private fun setMaterialOrbUniforms(
+        view: ShaderSurfaceView,
+        shader: RuntimeShader,
+        material: String,
+        w: Float,
+        h: Float,
+    ) {
+        val (envBitmap, envShader) = envFor(view, material)
+        shader.setInputShader("u_env", envShader)
+        shader.setFloatUniform("u_envSize", envBitmap.width.toFloat(), envBitmap.height.toFloat())
+        shader.setFloatUniform("u_resolution", w, h)
+        shader.setFloatUniform("u_time", view.currentTimeSeconds())
+
+        // Semantic params, RESOLVED here (motion overrides win when set).
+        shader.setFloatUniform("u_speed", view.resolvedMotionSpeed())
+        shader.setFloatUniform("u_morph", view.resolvedMotionAmp())
+        shader.setFloatUniform("u_orbit", view.orbit.toFloat())
+        shader.setFloatUniform("u_pattern", patternIndex(view.pattern, material))
+        shader.setFloatUniform("u_patternScale", view.resolvedMotionDetail())
+        shader.setFloatUniform("u_patternDistortion", view.resolvedMotionWarp())
+        shader.setFloatUniform("u_tint", view.tint.toFloat())
+        shader.setFloatUniform("u_opacity", view.opacity.toFloat())
+
+        // Key light direction from azimuth/elevation (y-up; az 0 = front).
+        val az = view.lightAzimuth
+        val el = view.lightElevation
+        shader.setFloatUniform(
+            "u_lightDir",
+            (sin(az) * cos(el)).toFloat(),
+            sin(el).toFloat(),
+            (cos(az) * cos(el)).toFloat()
+        )
+
+        shader.setFloatUniform("u_envRot", view.envRotation.toFloat())
+        shader.setFloatUniform("u_hdrBoost", if (view.hdr) 1f else 0f)
+        shader.setFloatUniform("u_density", view.density.toFloat())
+        shader.setFloatUniform("u_smoothness", view.smoothness.toFloat())
+        shader.setFloatUniform("u_silDensity", silhouetteDensity(material))
+        shader.setFloatUniform("u_smoothSil", if (isSmoothSilhouette(material)) 1f else 0f)
+        shader.setFloatUniform("u_motionSeed", view.motionSeed.toFloat())
     }
 
-    private fun drawMaterialOrb(view: ShaderSurfaceView, canvas: Canvas, w: Float, h: Float) {
+    private fun drawMaterialOrb(view: ShaderSurfaceView, canvas: Canvas, material: String, w: Float, h: Float) {
         val time = view.currentTimeSeconds()
-        buildMaterialOrbPath(view, w, h, time)
-        drawMaterialOrbShadow(view, canvas, w, h, time)
+        buildMaterialOrbPath(view, material, w, h, time)
+        drawMaterialOrbShadow(view, canvas, material, w, h, time)
         canvas.drawPath(materialOrbPath, materialOrbPaint)
     }
 
-    private fun buildMaterialOrbPath(view: ShaderSurfaceView, w: Float, h: Float, time: Float) {
+    private fun buildMaterialOrbPath(view: ShaderSurfaceView, material: String, w: Float, h: Float, time: Float) {
         val size = min(w, h)
         val radius = size * 0.405f
         val cx = w * 0.5f
         val cy = h * 0.5f
-        val wobbleAmount = view.resolvedMotionAmp().coerceIn(0f, 1.4f)
+        val morphAmount = view.resolvedMotionAmp().coerceIn(0f, 1.4f)
         val warpAmount = view.resolvedMotionWarp().coerceIn(0f, 1.4f)
         val speedAmount = view.resolvedMotionSpeed().coerceAtLeast(0.05f)
-        val density = materialOrbDensity(view)
-        // Reference (floating bubble video): 5-7 broad lobes whose amplitude breathes,
+        val density = silhouetteDensity(material)
+        // Reference (floating bubble video): broad lobes whose amplitude breathes,
         // plus localized dents that travel along the rim. Deformation is biased INWARD
         // so the silhouette never leaves the AGSL sphere domain (|p| <= 1).
-        val lobeAmp = (0.048f + 0.062f * wobbleAmount + 0.026f * warpAmount) * radius * (1.10f - density * 0.35f)
-        val dentDepth = (0.046f + 0.068f * wobbleAmount) * radius * (1.05f - density * 0.30f)
+        val lobeAmp = (0.048f + 0.062f * morphAmount + 0.026f * warpAmount) * radius * (1.10f - density * 0.35f)
+        val dentDepth = (0.046f + 0.068f * morphAmount) * radius * (1.05f - density * 0.30f)
         val phase = time * speedAmount
         val points = 128
 
@@ -220,21 +244,15 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         val dentPulse1 = (0.5f + 0.5f * sin(phase * 0.27f + 3.1f)).coerceAtLeast(0.12f)
         val dentPulse2 = (0.5f + 0.5f * sin(phase * 0.41f + 5.0f)).coerceAtLeast(0.12f)
 
-        // Breathing amplitude per lobe harmonic: wide swing so the whole body
-        // visibly inflates/relaxes over time, plus a slow global breath.
+        // Breathing amplitude per lobe harmonic + a slow global heartbeat breath,
+        // mirrored 1:1 by the AGSL sphere radius (orb-main.agsl).
         val breathe0 = 0.45f + 0.55f * sin(phase * 0.26f + 1.1f)
         val breathe1 = 0.45f + 0.55f * sin(phase * 0.33f + 4.0f)
         val breathe2 = 0.45f + 0.55f * sin(phase * 0.21f + 2.3f)
-        // Heartbeat breath, mirrored 1:1 by the AGSL sphere radius so the whole
-        // body (shading included) inflates and relaxes together.
         val globalBreath = orbBreath(phase)
 
-        // Smooth wax-blob silhouette (aura/symbiote mode 3 + mercury mode 4 + glass
-        // mode 5 + water mode 1). Rounder, moved by slow low harmonic swells instead
-        // of the liquid-pebble notches + traveling dents, so it reads like the Blender
-        // dispersion-glass / gel / symbiote sphere (wave displacement, no pressed-in
-        // creases).
-        val smoothSilhouette = view.orbMaterial >= 2.5 || (view.orbMaterial >= 0.5 && view.orbMaterial < 1.5)
+        // Smooth wax-blob silhouette (water/glass) vs liquid-pebble (metal/iridescent).
+        val smoothSilhouette = isSmoothSilhouette(material)
         materialOrbPath.reset()
         for (i in 0 until points) {
             val a = (i.toDouble() / points.toDouble() * PI * 2.0).toFloat()
@@ -251,8 +269,7 @@ internal class MaterialOrbMaterial : ShaderMaterial {
                 if (bottom > 0f) rr *= 1.0f + 0.020f * bottom * bottom
                 r = rr
             } else {
-                // Liquid-pebble profile (J reference): many short, shallow notches
-                // (higher harmonics 5/8/11) instead of broad balloon lobes.
+                // Liquid-pebble profile: many short, shallow notches (harmonics 5/8/11).
                 var wave =
                     sin(a * 5.0f + phase * 0.20f) * 0.42f * breathe0 +
                     sin(a * 8.0f - phase * 0.16f + 1.2f) * 0.34f * breathe1 +
@@ -264,8 +281,7 @@ internal class MaterialOrbMaterial : ShaderMaterial {
                 rr -= dentDepth * 0.72f * dentPulse0 * dentFalloff(a - dentAngle0, 0.30f)
                 rr -= dentDepth * 0.72f * dentPulse1 * dentFalloff(a - dentAngle1, 0.24f)
                 rr -= dentDepth * 0.55f * dentPulse2 * dentFalloff(a - dentAngle2, 0.38f)
-                // Gravity sag: the lower profile bulges slightly like a hanging drop
-                // (screen Y grows downward, so sin(a) > 0 is the bottom half).
+                // Gravity sag: the lower profile bulges slightly like a hanging drop.
                 if (bottom > 0f) rr *= 1.0f + 0.018f * bottom * bottom
                 r = rr
             }
@@ -281,7 +297,7 @@ internal class MaterialOrbMaterial : ShaderMaterial {
     }
 
     // Heartbeat: slow inflate with a quicker relax (asymmetric second harmonic).
-    // Keep in sync with the identical formula in material-orb.agsl.
+    // Keep in sync with the identical formula in orb-main.agsl.
     private fun orbBreath(phase: Float): Float {
         val pb = phase * 0.55f + 0.4f
         val beat = 0.65f * sin(pb) + 0.35f * sin(2.0f * pb + 1.2f)
@@ -299,17 +315,7 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         return if (g <= 0f) 0f else g * g
     }
 
-    private fun materialOrbDensity(view: ShaderSurfaceView): Float {
-        return when {
-            view.orbMaterial < 0.5 -> 0.92f
-            view.orbMaterial < 1.5 -> 0.45f
-            view.orbMaterial < 3.5 -> 0.62f
-            view.orbMaterial < 4.5 -> 0.90f
-            else -> 0.45f
-        }
-    }
-
-    private fun drawMaterialOrbShadow(view: ShaderSurfaceView, canvas: Canvas, w: Float, h: Float, time: Float) {
+    private fun drawMaterialOrbShadow(view: ShaderSurfaceView, canvas: Canvas, material: String, w: Float, h: Float, time: Float) {
         val size = min(w, h)
         val radius = size * 0.405f
         val cy = h * 0.5f
@@ -325,12 +331,7 @@ internal class MaterialOrbMaterial : ShaderMaterial {
         val shadowCy = cy + radius * 1.18f
         // Key light comes from the top-left → shadow shifts slightly right.
         val shadowOffX = radius * 0.08f
-        val baseStrength = when {
-            view.orbMaterial < 0.5 -> 30
-            view.orbMaterial < 1.5 -> 20
-            view.orbMaterial < 3.5 -> 24
-            else -> 28
-        }
+        val baseStrength = shadowStrength(material)
         // Rasterize the silhouette, then run it down and back up the pyramid:
         // 96 -> 48 -> 24 -> 12 -> 24 -> 48 -> 96. Six filtered passes ≈ gaussian.
         val pad = radius * 1.35f
@@ -359,7 +360,9 @@ internal class MaterialOrbMaterial : ShaderMaterial {
             cnv.drawBitmap(current, null, shadowDstRect, shadowBitmapPaint)
             current = bmp
         }
-        shadowBitmapPaint.alpha = (baseStrength * (0.60f + 0.50f * breath01)).toInt()
+        // The shadow follows the orb opacity too.
+        val opacity = view.opacity.coerceIn(0.0, 1.0).toFloat()
+        shadowBitmapPaint.alpha = (baseStrength * (0.60f + 0.50f * breath01) * opacity).toInt()
         shadowSrcRect.set(
             cx + shadowOffX - pad * squashX,
             shadowCy - pad * squashY,

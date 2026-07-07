@@ -1,0 +1,18 @@
+// ===== IRIDESCENT — thin-film over a clear dielectric (soap bubble) =====
+// tint reserved for film strength tuning (currently full film at preset 1.0).
+float3 surfaceColor(float2 p, float dd, float3 sp, float3 baseN, float3 N, float t) {
+    float3 V = float3(0.0, 0.0, 1.0);
+    float ndv = sat(dot(N, V));
+    float3 R = reflect(-V, N);
+
+    float fres = pow(1.0 - ndv, 2.0);
+    float3 refl = sampleEnv(R);
+    float3 T = refract(-V, N, 1.0 / 1.12);
+    float3 through = sampleEnvSoft(T, 0.35);
+    float band = fres * 1.7 + patternHeight(sp, t) * 1.1 + 0.15;
+    float3 film = 0.5 + 0.5 * cos(6.2831 * (band + float3(0.0, 0.33, 0.67)));
+    float3 pearl = mix(through, float3(0.93, 0.92, 0.95), 0.45);
+    float3 color = mix(pearl * mix(float3(1.0), film, 0.4), refl * film, sat(fres * 1.1 + 0.14));
+    color += refl * pow(1.0 - ndv, 4.0) * 0.25;
+    return color;
+}

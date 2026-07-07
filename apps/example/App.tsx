@@ -12,60 +12,67 @@ import {
 import RNCSlider from '@react-native-community/slider';
 import {
   MaterialOrb,
-  MATERIAL_ORB_PRESETS,
-  type MaterialOrbMaterial,
+  MATERIAL_NAMES,
+  MATERIAL_PRESETS,
+  type MaterialName,
+  type OrbPattern,
+  type ResolvedOrbParams,
 } from 'react-native-nitro-shaders';
-
-const MATERIALS: MaterialOrbMaterial[] = ['metal', 'water', 'iridescent', 'aura', 'mercury', 'glass'];
 
 // Runtime-switchable environments (must mirror native assets env/lab-N.png).
 const ENVS = [
   require('./assets/envs/lab-0.png'),
   require('./assets/envs/lab-1.png'),
-  require('./assets/envs/lab-2.png'),
+  require('./assets/envs/lab-2.png'), // glass default (dark teal)
   require('./assets/envs/lab-3.png'),
   require('./assets/envs/lab-4.png'),
   require('./assets/envs/lab-5.png'),
   require('./assets/envs/lab-6.png'),
-  require('./assets/envs/lab-7.png'), // studio (metal default)
-  require('./assets/envs/lab-8.png'), // mercury default
-  require('./assets/envs/lab-9.png'), // glass default (wooden_studio_08)
-  require('./assets/envs/lab-10.png'), // hangar_interior (CC0 stand-in for BlendKit metal-hangar)
-  require('./assets/envs/lab-11.png'), // qwantani dawn pure sky (water/gel reference env)
-  require('./assets/envs/lab-12.png'), // sunset sea (clouds + ocean) — water default
+  require('./assets/envs/lab-7.png'), // studio (metal/iridescent default)
+  require('./assets/envs/lab-8.png'),
+  require('./assets/envs/lab-9.png'), // wooden_studio_08
+  require('./assets/envs/lab-10.png'), // hangar_interior
+  require('./assets/envs/lab-11.png'), // qwantani dawn pure sky
+  require('./assets/envs/lab-12.png'), // sunset sea — water default
   require('./assets/envs/lab-13.png'), // calm sea reflecting the sky
   require('./assets/envs/lab-14.png'), // purple haze sky over sea
 ];
 
-function presetParams(material: MaterialOrbMaterial) {
-  const p = MATERIAL_ORB_PRESETS[material];
-  return {
-    speed: p.speed,
-    wobble: p.wobble,
-    distortion: p.distortion,
-    detail: p.detail,
-    materialColor: p.materialColor,
-    density: p.density ?? 1.0,
-    smooth: p.smooth ?? 0.0,
-    envRot: p.envRot ?? 0,
-  };
+const PATTERNS: OrbPattern[] = ['folds', 'bands', 'ripples'];
+
+type LabParams = ResolvedOrbParams;
+
+function presetParams(material: MaterialName): LabParams {
+  return { ...MATERIAL_PRESETS[material] };
 }
 
-function presetHdr(material: MaterialOrbMaterial): boolean {
-  return MATERIAL_ORB_PRESETS[material].hdr ?? true;
-}
+type NumericKey =
+  | 'speed'
+  | 'morph'
+  | 'orbit'
+  | 'patternScale'
+  | 'patternDistortion'
+  | 'tint'
+  | 'opacity'
+  | 'lightAzimuth'
+  | 'lightElevation'
+  | 'envRotation'
+  | 'density'
+  | 'smoothness';
 
-type ParamKey = keyof ReturnType<typeof presetParams>;
-
-const PARAMS: { key: ParamKey; label: string; min: number; max: number }[] = [
-  { key: 'speed', label: 'Speed', min: 0, max: 2 },
-  { key: 'wobble', label: 'Wobble', min: 0, max: 1.4 },
-  { key: 'distortion', label: 'Distortion', min: 0, max: 1.4 },
-  { key: 'detail', label: 'Detail', min: 0, max: 2 },
-  { key: 'materialColor', label: 'Color', min: 0, max: 1 },
+const SLIDERS: { key: NumericKey; label: string; min: number; max: number }[] = [
+  { key: 'speed', label: 'Speed', min: 0, max: 2.5 },
+  { key: 'morph', label: 'Morph', min: 0, max: 1.4 },
+  { key: 'orbit', label: 'Orbit', min: 0, max: 2 },
+  { key: 'patternScale', label: 'Scale', min: 0, max: 2 },
+  { key: 'patternDistortion', label: 'Distortion', min: 0, max: 1.4 },
+  { key: 'tint', label: 'Tint', min: 0, max: 1 },
+  { key: 'opacity', label: 'Opacity', min: 0, max: 1 },
+  { key: 'lightAzimuth', label: 'Light Az', min: 0, max: 6.283 },
+  { key: 'lightElevation', label: 'Light El', min: 0, max: 3.1415 },
+  { key: 'envRotation', label: 'Env Rot', min: 0, max: 6.283 },
   { key: 'density', label: 'Density', min: 0, max: 1.5 },
-  { key: 'smooth', label: 'Smooth', min: 0, max: 1 },
-  { key: 'envRot', label: 'Env Rot', min: 0, max: 6.283 },
+  { key: 'smoothness', label: 'Smooth', min: 0, max: 1 },
 ];
 
 function Slider({
@@ -100,22 +107,19 @@ function Slider({
 }
 
 export default function App() {
-  const [material, setMaterial] = useState<MaterialOrbMaterial>('mercury');
-  const [params, setParams] = useState(presetParams('mercury'));
-  const [envIndex, setEnvIndex] = useState<number | undefined>(undefined);
-  const [hdr, setHdr] = useState(presetHdr('mercury'));
+  const [material, setMaterial] = useState<MaterialName>('metal');
+  const [params, setParams] = useState<LabParams>(presetParams('metal'));
 
-  const switchMaterial = (m: MaterialOrbMaterial) => {
+  const switchMaterial = (m: MaterialName) => {
     setMaterial(m);
     setParams(presetParams(m));
-    setHdr(presetHdr(m));
   };
 
   return (
     <SafeAreaView style={styles.safearea}>
       <View style={styles.container}>
         <View style={styles.tabs}>
-          {MATERIALS.map((m) => (
+          {MATERIAL_NAMES.map((m) => (
             <Pressable key={m} onPress={() => switchMaterial(m)}>
               <View style={[styles.tab, material === m && styles.tabSelected]}>
                 <Text style={[styles.tabText, material === m && styles.tabTextSelected]}>
@@ -126,61 +130,72 @@ export default function App() {
           ))}
         </View>
         <View style={styles.orbArea}>
-          <MaterialOrb
-            material={material}
-            speed={params.speed}
-            wobble={params.wobble}
-            distortion={params.distortion}
-            detail={params.detail}
-            materialColor={params.materialColor}
-            density={params.density}
-            smooth={params.smooth}
-            envRot={params.envRot}
-            environment={envIndex}
-            hdr={hdr}
-            style={styles.surface}
-          />
+          <MaterialOrb material={material} params={params} style={styles.surface} />
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.envRow}>
-          <Pressable onPress={() => setEnvIndex(undefined)}>
-            <View style={[styles.envThumb, styles.envAuto, envIndex === undefined && styles.envSelected]}>
+          <Pressable onPress={() => setParams((prev) => ({ ...prev, environment: -1 }))}>
+            <View
+              style={[
+                styles.envThumb,
+                styles.envAuto,
+                params.environment < 0 && styles.envSelected,
+              ]}
+            >
               <Text style={styles.envAutoText}>auto</Text>
             </View>
           </Pressable>
           {ENVS.map((src, i) => (
-            <Pressable key={i} onPress={() => setEnvIndex(i)}>
-              <Image source={src} style={[styles.envThumb, envIndex === i && styles.envSelected]} />
+            <Pressable key={i} onPress={() => setParams((prev) => ({ ...prev, environment: i }))}>
+              <Image
+                source={src}
+                style={[styles.envThumb, params.environment === i && styles.envSelected]}
+              />
             </Pressable>
           ))}
         </ScrollView>
-        <View style={styles.panel}>
-          {PARAMS.map((p) => (
+        <ScrollView style={styles.panel} contentContainerStyle={styles.panelContent}>
+          <View style={styles.patternRow}>
+            <Text style={styles.sliderLabel}>Pattern</Text>
+            {PATTERNS.map((pt) => (
+              <Pressable key={pt} onPress={() => setParams((prev) => ({ ...prev, pattern: pt }))}>
+                <View style={[styles.patternChip, params.pattern === pt && styles.patternChipOn]}>
+                  <Text
+                    style={[
+                      styles.patternChipText,
+                      params.pattern === pt && styles.patternChipTextOn,
+                    ]}
+                  >
+                    {pt}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+          {SLIDERS.map((s) => (
             <Slider
-              key={p.key}
-              label={p.label}
-              min={p.min}
-              max={p.max}
-              value={params[p.key]}
-              onChange={(v) => setParams((prev) => ({ ...prev, [p.key]: v }))}
+              key={s.key}
+              label={s.label}
+              min={s.min}
+              max={s.max}
+              value={params[s.key]}
+              onChange={(v) => setParams((prev) => ({ ...prev, [s.key]: v }))}
             />
           ))}
           <View style={styles.panelFooter}>
-            <Pressable style={styles.hdrRow} onPress={() => setHdr((v) => !v)}>
-              <View style={[styles.checkbox, hdr && styles.checkboxOn]}>
-                {hdr && <Text style={styles.checkmark}>✓</Text>}
+            <Pressable
+              style={styles.hdrRow}
+              onPress={() => setParams((prev) => ({ ...prev, hdr: !prev.hdr }))}
+            >
+              <View style={[styles.checkbox, params.hdr && styles.checkboxOn]}>
+                {params.hdr && <Text style={styles.checkmark}>✓</Text>}
               </View>
               <Text style={styles.hdrLabel}>HDR boost</Text>
             </Pressable>
-            <Pressable
-              onPress={() => {
-                setParams(presetParams(material));
-                setHdr(presetHdr(material));
-              }}
-            >
+            <Pressable onPress={() => setParams(presetParams(material))}>
               <Text style={styles.reset}>Reset to defaults</Text>
             </Pressable>
           </View>
-        </View>
+        </ScrollView>
         <StatusBar style="auto" />
       </View>
     </SafeAreaView>
@@ -207,7 +222,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   tab: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 9,
   },
@@ -227,8 +242,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   surface: {
-    width: 300,
-    height: 300,
+    width: 280,
+    height: 280,
   },
   envRow: {
     maxHeight: 56,
@@ -258,11 +273,36 @@ const styles = StyleSheet.create({
   },
   panel: {
     width: '90%',
+    maxHeight: 340,
     backgroundColor: '#eef0f5',
     borderRadius: 16,
+  },
+  panelContent: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    gap: 10,
+    gap: 8,
+  },
+  patternRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  patternChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#e2e5ec',
+  },
+  patternChipOn: {
+    backgroundColor: '#2f80ff',
+  },
+  patternChipText: {
+    color: '#5c6270',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  patternChipTextOn: {
+    color: '#ffffff',
   },
   panelFooter: {
     flexDirection: 'row',
@@ -309,7 +349,7 @@ const styles = StyleSheet.create({
   },
   nativeSlider: {
     flex: 1,
-    height: 36,
+    height: 32,
   },
   sliderValue: {
     width: 42,

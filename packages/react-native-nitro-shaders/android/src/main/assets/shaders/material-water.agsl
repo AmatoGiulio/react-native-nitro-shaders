@@ -1,0 +1,51 @@
+// ===== WATER / GEL — clear glass/gel, transmission + reflection =====
+// Blender "Gel shader" ground truth, frozen on device 2026-07-06.
+// Default pattern: 'ripples' (soft marble). tint = frost, density = volume
+// absorption, smoothness = smooth glassy patches, light = top light direction.
+float3 surfaceColor(float2 p, float dd, float3 sp, float3 baseN, float3 N, float t) {
+    float3 V = float3(0.0, 0.0, 1.0);
+
+    // Dedicated fine-ripple normal from the active pattern (not the shared N):
+    // modest bump — the strong IOR refraction magnifies it into visible swirls.
+    float3 wTang = patternTangent(sp, baseN, t);
+    float wh = patternHeight(sp, t);
+    // Not all of the surface is rippled: smoothness gates clear glassy patches.
+    float3 mp = rotate3(sp, (t * 0.05 + u_motionSeed) * u_orbit, t * 0.07 * u_orbit);
+    float rippleMask = mix(1.0, smoothstep(0.30, 0.66, gnoise(mp * 1.2 + 4.0)), u_smoothness);
+    // Vertical gradient: full marble on top, smooth clear glass toward the belly.
+    float vGrad = smoothstep(-0.75, 0.15, baseN.y);
+    float3 Nw = normalize(baseN - wTang * (0.14 + u_morph * 0.45) * rippleMask * vGrad);
+    float ndvW = sat(dot(Nw, V));
+    float3 Rw = reflect(-V, Nw);
+
+    // Base Color: Noise → Mix(A #68F3FF cyan, B #7277FF blue). Tints the body.
+    float3 gelA = float3(0.408, 0.953, 1.0);   // #68F3FF
+    float3 gelB = float3(0.447, 0.467, 1.0);   // #7277FF
+    float3 baseCol = mix(gelA, gelB, sat(wh));
+
+    // Principled BSDF (IOR 1.473, transmission): refracted env, tinted by base
+    // color, with Volume Absorption (density scales it). tint = frost.
+    float3 T = refract(-V, Nw, 1.0 / 1.473);
+    float3 through = sampleEnvSoft(T, mix(0.02, 0.22, sat(u_tint)));
+    float pathLen = mix(0.10, 1.0, dd);
+    float3 absorb = (float3(1.0) - baseCol) * (0.4 * u_density);   // 0.4 = Blender density
+    float3 principled = through * exp(-absorb * pathLen * 2.0);
+    principled *= mix(float3(1.0), baseCol, 0.30);
+
+    // Glass BSDF (IOR 1.8, roughness 0): reflection, dominant at the grazing edge.
+    float3 glass = sampleEnvSoft(Rw, 0.08);
+
+    // Mix Shader by Fresnel through a sharp ramp: face-on → transmission,
+    // grazing edge → reflection.
+    float fres = pow(1.0 - ndvW, 5.0);
+    float fresMix = smoothstep(0.0, 0.14, fres + 0.02);
+    float3 color = mix(principled, glass, fresMix);
+
+    // Sun/sky glints on the wave crests → sea sparkle.
+    float lum = max(glass.r, max(glass.g, glass.b));
+    color += glass * smoothstep(0.78, 1.0, lum) * 0.35;
+    // Key light: the lit side brightens, the opposite belly darkens.
+    float topLight = smoothstep(-0.7, 0.9, dot(baseN, u_lightDir));
+    color *= mix(0.86, 1.12, topLight);
+    return color;
+}

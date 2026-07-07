@@ -1,0 +1,45 @@
+// ==========================================
+// orb-main.agsl — entry point, appended after orb-core + material-<name>.
+// Builds the living 3D sphere frame (breath, normals, rim-fold coupling for the
+// pebble silhouette family), calls the material's surfaceColor(), then applies
+// the shared soft tonemap, dither and opacity.
+// ==========================================
+
+half4 main(float2 fragCoord) {
+    float2 res = max(u_resolution, float2(1.0));
+    float size = min(res.x, res.y);
+    float2 uv = (fragCoord - 0.5 * res) / (0.5 * size);
+    uv.y = -uv.y; // Y-up
+
+    float t = u_time * u_speed;
+
+    // Sphere sized to match the native Path radius (0.405 of min ≈ 0.81 in uv units).
+    // Heartbeat breath: identical formula to ShaderMaterial.kt orbBreath().
+    float pb = t * 0.55 + 0.4;
+    float breath = 0.945 + 0.055 * (0.65 * sin(pb) + 0.35 * sin(2.0 * pb + 1.2));
+    float2 p = uv / (0.81 * breath);
+    float dd = dot(p, p);
+    float z = sqrt(max(0.0, 1.0 - dd));
+    float3 sp = float3(p.x, p.y, z);           // point on the 3D sphere surface
+    float3 baseN = normalize(sp);
+    float3 N = perturbNormal3(sp, baseN, t);
+
+    // Rim-fold coupling: only for the pebble silhouette family (lobes + dents).
+    // The smooth wax family (water/glass) has no creases to continue inward.
+    if (u_smoothSil < 0.5) {
+        float e2 = 0.02;
+        float hC = rimFoldHeight(p, t);
+        float hX = rimFoldHeight(p + float2(e2, 0.0), t) - hC;
+        float hY = rimFoldHeight(p + float2(0.0, e2), t) - hC;
+        float3 rimGrad = float3(hX, hY, 0.0) / e2;
+        float3 rimTang = rimGrad - dot(rimGrad, baseN) * baseN;
+        N = normalize(N - rimTang * 3.2);
+    }
+
+    float3 color = surfaceColor(p, dd, sp, baseN, N, t);
+
+    color = color / (color + 0.55) * 1.55;   // shared soft tonemap
+    color += (hash21(fragCoord + u_time) - 0.5) / 255.0;
+    float a = clamp(u_opacity, 0.0, 1.0);
+    return half4(half3(clamp(color, 0.0, 1.0)) * a, a);
+}

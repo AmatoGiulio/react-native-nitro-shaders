@@ -1,0 +1,42 @@
+// ===== GLASS — dispersion glass (BlenderKit "Dispersion glass shader", EEVEE) =====
+// Frozen on device 2026-07-06 (env teal lab-2, hdr on, envRot 2.85).
+// Colorless glass refracting the env with per-channel chromatic dispersion.
+// Default pattern: 'bands' (Wave Texture swirl). tint = dispersion/frost.
+// Ref: docs/references/blender-dispersion-glass.md
+float3 surfaceColor(float2 p, float dd, float3 sp, float3 baseN, float3 N, float t) {
+    float3 V = float3(0.0, 0.0, 1.0);
+
+    // Glass-specific normal from the active pattern (wave-band swirl by default).
+    float3 gTang = patternTangent(sp, baseN, t);
+    float3 Ng = normalize(baseN - gTang * (0.5 + u_morph * 0.8));
+    float ndvG = sat(dot(Ng, V));
+    float3 Rg = reflect(-V, Ng);
+
+    float iorBase = 1.45;
+    float disp = 0.05 * (0.4 + u_patternDistortion);   // IOR spread → chromatic edge
+    float f0 = 0.04;                                    // ~IOR 1.5 dielectric
+    float fres = f0 + (1.0 - f0) * pow(1.0 - ndvG, 5.0);
+    // Frosted glass: heavy blur averages the env into a soft, milky tint.
+    float rough = 0.30 + 0.45 * sat(u_tint);
+    // Per-channel refraction (dispersion): tint each sample to its own channel.
+    float3 Tr = refract(-V, Ng, 1.0 / (iorBase - disp));
+    float3 Tg = refract(-V, Ng, 1.0 / iorBase);
+    float3 Tb = refract(-V, Ng, 1.0 / (iorBase + disp));
+    float3 through = float3(
+        sampleEnvSoft(Tr, rough).r,
+        sampleEnvSoft(Tg, rough).g,
+        sampleEnvSoft(Tb, rough).b
+    );
+    // Reflection is soft and minor — frosted glass barely mirrors.
+    float3 refl = sampleEnvSoft(Rg, 0.15 + 0.30 * sat(u_tint));
+    float3 color = mix(through, refl, sat(fres * 0.5));
+    // Low contrast: pull toward the blurred env mean and lift the blacks.
+    color = mix(color, through, 0.25);
+    color = color * 0.85 + 0.06;
+    // Soft window bloom only (no crisp mirror highlight).
+    float lum = max(refl.r, max(refl.g, refl.b));
+    color += refl * smoothstep(0.82, 1.0, lum) * 0.18;
+    // Gentle grazing rim.
+    color += float3(0.90, 0.94, 1.0) * pow(1.0 - ndvG, 3.5) * 0.18;
+    return color;
+}

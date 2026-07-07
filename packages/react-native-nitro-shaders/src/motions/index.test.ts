@@ -28,7 +28,7 @@ test('object motion merges provided params over the material defaults', () => {
 })
 
 test('loop motion applies period', () => {
-  const r = resolveMotion({ type: 'loop', period: 5, seed: 9 }, 'aura')
+  const r = resolveMotion({ type: 'loop', period: 5, seed: 9 }, 'glass')
   expect(r.motionType).toBe(MOTION_TYPE_VALUES.loop)
   expect(r.motionPeriod).toBe(5)
   expect(r.motionSeed).toBe(9)
@@ -41,7 +41,7 @@ test('none motion sets type 0 and keeps base params', () => {
 })
 
 test('every material has a default motion', () => {
-  for (const name of ['metal', 'water', 'iridescent', 'aura'] as const) {
+  for (const name of ['metal', 'water', 'iridescent', 'glass'] as const) {
     expect(MOTION_DEFAULTS[name]).toBeDefined()
   }
 })

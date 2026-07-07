@@ -17,12 +17,30 @@ class HybridNitroShaders(val context: ThemedReactContext): HybridNitroShadersSpe
     private val shaderSurfaceView: ShaderSurfaceView
         get() = view as ShaderSurfaceView
 
+    // ---- Surface selection + lifecycle ----
+
+    private var _shader = "solid"
+    override var shader: String
+        get() = _shader
+        set(value) {
+            _shader = value
+            shaderSurfaceView.shader = value
+        }
+
     private var _color = "#000000"
     override var color: String
         get() = _color
         set(value) {
             _color = value
             shaderSurfaceView.color = value
+        }
+
+    private var _colors: Array<String> = arrayOf()
+    override var colors: Array<String>
+        get() = _colors
+        set(value) {
+            _colors = value
+            shaderSurfaceView.colors = value
         }
 
     private var _animated = false
@@ -49,20 +67,14 @@ class HybridNitroShaders(val context: ThemedReactContext): HybridNitroShadersSpe
             shaderSurfaceView.debugTime = value
         }
 
-    private var _shader = "solid"
-    override var shader: String
-        get() = _shader
-        set(value) {
-            _shader = value
-            shaderSurfaceView.shader = value
-        }
+    // ---- Material orb: semantic parameter set ----
 
-    private var _colors: Array<String> = arrayOf()
-    override var colors: Array<String>
-        get() = _colors
+    private var _material = "metal"
+    override var material: String
+        get() = _material
         set(value) {
-            _colors = value
-            shaderSurfaceView.colors = value
+            _material = value
+            shaderSurfaceView.material = value
         }
 
     private var _speed = 1.0
@@ -73,149 +85,119 @@ class HybridNitroShaders(val context: ThemedReactContext): HybridNitroShadersSpe
             shaderSurfaceView.speed = value
         }
 
-    private var _intensity = 1.0
-    override var intensity: Double
-        get() = _intensity
+    private var _morph = 0.5
+    override var morph: Double
+        get() = _morph
         set(value) {
-            _intensity = value
-            shaderSurfaceView.intensity = value
+            _morph = value
+            shaderSurfaceView.morph = value
         }
 
-    private var _scale = 1.0
-    override var scale: Double
-        get() = _scale
+    private var _orbit = 1.0
+    override var orbit: Double
+        get() = _orbit
         set(value) {
-            _scale = value
-            shaderSurfaceView.scale = value
+            _orbit = value
+            shaderSurfaceView.orbit = value
         }
 
-    private var _warp = 1.0
-    override var warp: Double
-        get() = _warp
+    private var _pattern = "auto"
+    override var pattern: String
+        get() = _pattern
         set(value) {
-            _warp = value
-            shaderSurfaceView.warp = value
+            _pattern = value
+            shaderSurfaceView.pattern = value
         }
 
-    private var _grain = 0.0
-    override var grain: Double
-        get() = _grain
+    private var _patternScale = 1.0
+    override var patternScale: Double
+        get() = _patternScale
         set(value) {
-            _grain = value
-            shaderSurfaceView.grain = value
+            _patternScale = value
+            shaderSurfaceView.patternScale = value
         }
 
-    private var _distortion = 1.2
-    override var distortion: Double
-        get() = _distortion
+    private var _patternDistortion = 0.5
+    override var patternDistortion: Double
+        get() = _patternDistortion
         set(value) {
-            _distortion = value
-            shaderSurfaceView.distortion = value
+            _patternDistortion = value
+            shaderSurfaceView.patternDistortion = value
         }
 
-    private var _shape = "circle"
-    override var shape: String
-        get() = _shape
+    private var _tint = 0.5
+    override var tint: Double
+        get() = _tint
         set(value) {
-            _shape = value
-            shaderSurfaceView.shape = value
+            _tint = value
+            shaderSurfaceView.tint = value
         }
 
-    private var _colorBack = "#00000000"
-    override var colorBack: String
-        get() = _colorBack
+    private var _opacity = 1.0
+    override var opacity: Double
+        get() = _opacity
         set(value) {
-            _colorBack = value
-            shaderSurfaceView.colorBack = value
+            _opacity = value
+            shaderSurfaceView.opacity = value
         }
 
-    private var _colorTint = "#00000000"
-    override var colorTint: String
-        get() = _colorTint
+    private var _lightAzimuth = 0.0
+    override var lightAzimuth: Double
+        get() = _lightAzimuth
         set(value) {
-            _colorTint = value
-            shaderSurfaceView.colorTint = value
+            _lightAzimuth = value
+            shaderSurfaceView.lightAzimuth = value
         }
 
-    private var _repetition = 4.0
-    override var repetition: Double
-        get() = _repetition
+    private var _lightElevation = Math.PI / 2
+    override var lightElevation: Double
+        get() = _lightElevation
         set(value) {
-            _repetition = value
-            shaderSurfaceView.repetition = value
+            _lightElevation = value
+            shaderSurfaceView.lightElevation = value
         }
 
-    private var _softness = 0.5
-    override var softness: Double
-        get() = _softness
+    private var _environment = -1.0
+    override var environment: Double
+        get() = _environment
         set(value) {
-            _softness = value
-            shaderSurfaceView.softness = value
+            _environment = value
+            shaderSurfaceView.environment = value
         }
 
-    private var _shiftRed = 0.3
-    override var shiftRed: Double
-        get() = _shiftRed
+    private var _envRotation = 0.0
+    override var envRotation: Double
+        get() = _envRotation
         set(value) {
-            _shiftRed = value
-            shaderSurfaceView.shiftRed = value
+            _envRotation = value
+            shaderSurfaceView.envRotation = value
         }
 
-    private var _shiftBlue = 0.3
-    override var shiftBlue: Double
-        get() = _shiftBlue
+    private var _hdr = false
+    override var hdr: Boolean
+        get() = _hdr
         set(value) {
-            _shiftBlue = value
-            shaderSurfaceView.shiftBlue = value
+            _hdr = value
+            shaderSurfaceView.hdr = value
         }
 
-    private var _contour = 0.5
-    override var contour: Double
-        get() = _contour
+    private var _density = 1.0
+    override var density: Double
+        get() = _density
         set(value) {
-            _contour = value
-            shaderSurfaceView.contour = value
+            _density = value
+            shaderSurfaceView.density = value
         }
 
-    private var _angle = 0.0
-    override var angle: Double
-        get() = _angle
+    private var _smoothness = 0.0
+    override var smoothness: Double
+        get() = _smoothness
         set(value) {
-            _angle = value
-            shaderSurfaceView.angle = value
+            _smoothness = value
+            shaderSurfaceView.smoothness = value
         }
 
-    private var _orbMaterial = 0.0
-    override var orbMaterial: Double
-        get() = _orbMaterial
-        set(value) {
-            _orbMaterial = value
-            shaderSurfaceView.orbMaterial = value
-        }
-
-    private var _wobble = 1.0
-    override var wobble: Double
-        get() = _wobble
-        set(value) {
-            _wobble = value
-            shaderSurfaceView.wobble = value
-        }
-
-    private var _detail = 1.0
-    override var detail: Double
-        get() = _detail
-        set(value) {
-            _detail = value
-            shaderSurfaceView.detail = value
-        }
-
-    private var _materialColor = 0.5
-    override var materialColor: Double
-        get() = _materialColor
-        set(value) {
-            _materialColor = value
-            shaderSurfaceView.materialColor = value
-        }
+    // ---- Motion uniform contract ----
 
     private var _motionType = 0.0
     override var motionType: Double
@@ -275,10 +257,24 @@ class HybridNitroShaders(val context: ThemedReactContext): HybridNitroShadersSpe
 }
 
 internal class ShaderSurfaceView(context: Context): View(context), Choreographer.FrameCallback {
+    // ---- Surface ----
+    var shader: String = "solid"
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     var color: String = "#000000"
         set(value) {
             field = value
             parsedColor = parseColor(value)
+            invalidate()
+        }
+
+    var colors: Array<String> = arrayOf()
+        set(value) {
+            field = value
+            parsedColors = parseColors(value)
             invalidate()
         }
 
@@ -301,16 +297,10 @@ internal class ShaderSurfaceView(context: Context): View(context), Choreographer
             invalidate()
         }
 
-    var shader: String = "solid"
+    // ---- Material orb semantic params ----
+    var material: String = "metal"
         set(value) {
             field = value
-            invalidate()
-        }
-
-    var colors: Array<String> = arrayOf()
-        set(value) {
-            field = value
-            parsedColors = parseColors(value)
             invalidate()
         }
 
@@ -320,114 +310,91 @@ internal class ShaderSurfaceView(context: Context): View(context), Choreographer
             invalidate()
         }
 
-    var intensity: Double = 1.0
+    var morph: Double = 0.5
         set(value) {
             field = value
             invalidate()
         }
 
-    var scale: Double = 1.0
+    var orbit: Double = 1.0
         set(value) {
             field = value
             invalidate()
         }
 
-    var warp: Double = 1.0
+    var pattern: String = "auto"
         set(value) {
             field = value
             invalidate()
         }
 
-    var grain: Double = 0.0
+    var patternScale: Double = 1.0
         set(value) {
             field = value
             invalidate()
         }
 
-    var distortion: Double = 1.2
+    var patternDistortion: Double = 0.5
         set(value) {
             field = value
             invalidate()
         }
 
-    var shape: String = "circle"
+    var tint: Double = 0.5
         set(value) {
             field = value
             invalidate()
         }
 
-    var colorBack: String = "#00000000"
+    var opacity: Double = 1.0
         set(value) {
             field = value
             invalidate()
         }
 
-    var colorTint: String = "#00000000"
+    var lightAzimuth: Double = 0.0
         set(value) {
             field = value
             invalidate()
         }
 
-    var repetition: Double = 4.0
+    var lightElevation: Double = Math.PI / 2
         set(value) {
             field = value
             invalidate()
         }
 
-    var softness: Double = 0.5
+    var environment: Double = -1.0
         set(value) {
             field = value
             invalidate()
         }
 
-    var shiftRed: Double = 0.3
+    var envRotation: Double = 0.0
         set(value) {
             field = value
             invalidate()
         }
 
-    var shiftBlue: Double = 0.3
+    var hdr: Boolean = false
         set(value) {
             field = value
             invalidate()
         }
 
-    var contour: Double = 0.5
+    var density: Double = 1.0
         set(value) {
             field = value
             invalidate()
         }
 
-    var angle: Double = 0.0
+    var smoothness: Double = 0.0
         set(value) {
             field = value
             invalidate()
         }
 
-    var orbMaterial: Double = 0.0
-        set(value) {
-            field = value
-            invalidate()
-        }
-
-    var wobble: Double = 1.0
-        set(value) {
-            field = value
-            invalidate()
-        }
-
-    var detail: Double = 1.0
-        set(value) {
-            field = value
-            invalidate()
-        }
-
-    var materialColor: Double = 0.5
-        set(value) {
-            field = value
-            invalidate()
-        }
-
+    // ---- Motion ----
     var motionType: Double = 0.0
         set(value) {
             field = value
@@ -502,32 +469,30 @@ internal class ShaderSurfaceView(context: Context): View(context), Choreographer
         val w = width.toFloat()
         val h = height.toFloat()
 
-        val material = materials[shader] ?: solidMaterial
-        if (material.isAvailable()) {
-            material.draw(canvas, this, w, h)
+        val activeMaterial = materials[shader] ?: solidMaterial
+        if (activeMaterial.isAvailable()) {
+            activeMaterial.draw(canvas, this, w, h)
         } else {
-            material.drawFallback(canvas, this, w, h)
+            activeMaterial.drawFallback(canvas, this, w, h)
         }
     }
 
-    internal fun resolvedMotionType(): Float {
-        return if (motionType > 0.0) motionType.toFloat() else 2.0f
-    }
-
+    // Motion params fall back to the semantic params when unset (0) — the motion
+    // system can override any of them at runtime without touching the others.
     internal fun resolvedMotionSpeed(): Float {
         return if (motionSpeed > 0.0) motionSpeed.toFloat() else speed.toFloat()
     }
 
     internal fun resolvedMotionAmp(): Float {
-        return if (motionAmp > 0.0) motionAmp.toFloat() else wobble.toFloat()
+        return if (motionAmp > 0.0) motionAmp.toFloat() else morph.toFloat()
     }
 
     internal fun resolvedMotionWarp(): Float {
-        return if (motionWarp > 0.0) motionWarp.toFloat() else distortion.toFloat()
+        return if (motionWarp > 0.0) motionWarp.toFloat() else patternDistortion.toFloat()
     }
 
     internal fun resolvedMotionDetail(): Float {
-        return if (motionDetail > 0.0) motionDetail.toFloat() else detail.toFloat()
+        return if (motionDetail > 0.0) motionDetail.toFloat() else patternScale.toFloat()
     }
 
     override fun doFrame(frameTimeNanos: Long) {
